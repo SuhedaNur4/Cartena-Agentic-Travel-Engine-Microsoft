@@ -1,0 +1,30 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+
+# ── Python ────────────────────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+
+# ── Generated data ────────────────────────────────────────────────────────────
+# Ignore all runtime databases, traces, and chroma indexes
+data/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Docs, Eval & Temp ─────────────────────────────────────────────────────────
+# Ignore all docs except the images folder (which contains README graphics)
+docs/*
+!docs/images/
+
+# Ignore evaluation and temporary markdown folders
+md docs/
+reports/
+eval/
