@@ -1,0 +1,32 @@
+# ── Web Framework ─────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9       # required for FastAPI form data
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+# LocalEmbeddingAdapter (all-MiniLM-L6-v2) tarafından zorunlu.
+# NOT: Foundry Local kataloğunda embedding modeli YOKTUR; bu yüzden
+# embedding sentence-transformers ile yerelde çalışır.
+sentence-transformers>=3.0.0
+
+# ── LLM Generation (OpenAI-compatible client → Foundry Local API) ──────────────
+openai>=1.35.0
+
+# ── Vector Store ───────────────────────────────────────────────────────────────
+chromadb>=0.5.0
+
+# ── Data & Validation ──────────────────────────────────────────────────────────
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+
+# ── Async Persistence ──────────────────────────────────────────────────────────
+aiosqlite>=0.20.0
+
+# ── Utilities ──────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+httpx>=0.27.0                  # async HTTP client (health checks, testing)
+
+# ── Testing ────────────────────────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0                  # also used as ASGI test client
