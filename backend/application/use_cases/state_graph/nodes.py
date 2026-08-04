@@ -116,34 +116,41 @@ async def retriever_node(
     query_vector = await embedding_client.embed(state.request.query_text)
     city_key = normalize_city(state.request.destination)
 
-    chunks = await vector_store.retrieve(
+    # IVectorStore.retrieve() returns list[tuple[KnowledgeChunk, float]].
+    # We extract only the content strings — the float similarity scores are
+    # not consumed downstream yet (reserved for EPIC 3 observability).
+    raw_chunks = await vector_store.retrieve(
         query_vector=query_vector,
         city=city_key,
         top_k=5,
     )
-    # Deduplicate while preserving insertion order (dict.fromkeys is stable).
-    unique_chunks = list(dict.fromkeys(chunks))
-    kb_miss = len(unique_chunks) == 0
+    # Deduplicate by content while preserving order.
+    unique_contents: list[str] = list(
+        dict.fromkeys(chunk.content for chunk, _score in raw_chunks)
+    )
+    kb_miss = len(unique_contents) == 0
 
     if kb_miss:
         logger.warning(
             "No KB chunks found for '%s'. Falling back to unfiltered retrieval.",
             state.request.destination,
         )
-        fallback = await vector_store.retrieve(
+        fallback_raw = await vector_store.retrieve(
             query_vector=query_vector,
             city=None,
             top_k=3,
         )
-        unique_chunks = list(dict.fromkeys(fallback))
+        unique_contents = list(
+            dict.fromkeys(chunk.content for chunk, _score in fallback_raw)
+        )
 
-    state.rag_chunks = unique_chunks
+    state.rag_chunks = unique_contents
     state.kb_miss = kb_miss
 
     state.emit(
         {
             "type": "context",
-            "kb_chunks": len(unique_chunks),
+            "kb_chunks": len(unique_contents),
             "kb_miss": kb_miss,
         }
     )
@@ -153,7 +160,7 @@ async def retriever_node(
             node="retriever",
             timestamp=datetime.utcnow(),
             duration_ms=(time.monotonic() - t0) * 1000,
-            metadata={"kb_chunks": len(unique_chunks), "kb_miss": kb_miss},
+            metadata={"kb_chunks": len(unique_contents), "kb_miss": kb_miss},
         )
     )
     return state
