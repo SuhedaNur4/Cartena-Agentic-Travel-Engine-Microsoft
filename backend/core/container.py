@@ -77,7 +77,7 @@ def build(settings: Settings) -> Container:
     Construct and wire the entire application dependency graph.
     Called once during FastAPI lifespan startup.
     """
-    from backend.infrastructure.embeddings.local_embedding_adapter import LocalEmbeddingAdapter
+    from backend.infrastructure.embeddings.ollama_embedding_adapter import OllamaEmbeddingAdapter
 
     # ── Infrastructure ────────────────────────────────────────────────────────
     llm_client = FoundryLLMAdapter(
@@ -86,9 +86,15 @@ def build(settings: Settings) -> Container:
         api_key=settings.foundry_api_key,
     )
 
-    # Embeddings (Fallback to sentence-transformers since Foundry lacks native embeddings)
-    embedding_client = LocalEmbeddingAdapter(
-        model_name="all-MiniLM-L6-v2"
+    # Embeddings — Ollama nomic-embed-text (768-dim) running in local Docker container.
+    # LocalEmbeddingAdapter (sentence-transformers, all-MiniLM-L6-v2, 384-dim) is kept
+    # as a documented fallback but is NOT wired here.
+    # IMPORTANT: ChromaDB collection must be rebuilt when switching embedding models
+    # because dimension mismatch (384 vs 768) will cause insert errors.
+    ollama_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
+    embedding_client = OllamaEmbeddingAdapter(
+        base_url=ollama_base_url,
+        model="nomic-embed-text",
     )
 
     vector_store = ChromaAdapter(
