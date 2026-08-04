@@ -34,7 +34,7 @@ Graph topology:
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from backend.application.ports.embedding_port import IEmbeddingClient
 from backend.application.ports.itinerary_repo_port import IItineraryRepository
@@ -83,12 +83,16 @@ class StateGraphEngine:
         vector_store: IVectorStore,
         itinerary_repo: IItineraryRepository,
         online_adapters: list[IOnlineAdapter] | None = None,
+        checkpoint_repo: Any | None = None,
+        trace_repo: Any | None = None,
     ) -> None:
         self._llm = llm_client
         self._embeddings = embedding_client
         self._vector_store = vector_store
         self._repo = itinerary_repo
         self._online_adapters = online_adapters or []
+        self._checkpoint_repo = checkpoint_repo
+        self._trace_repo = trace_repo
 
     async def run(self, request: TripRequest) -> AsyncIterator[dict]:
         """

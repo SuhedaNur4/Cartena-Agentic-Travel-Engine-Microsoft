@@ -1,5 +1,5 @@
 """
-State Graph: WorkflowState
+State Graph: WorkflowState / CartenaState
 
 Defines the shared mutable state object that is threaded through every node
 in the Cartena agentic pipeline.  All nodes read from and write back to this
@@ -9,6 +9,9 @@ Design note:
     WorkflowState intentionally contains observability fields (trace_events,
     visited_nodes, current_node) so that the Observability layer can be wired
     in without any changes to the node implementations themselves.
+
+    CartenaState is provided as a backward-compatible alias used by the
+    checkpoint and trace repository layers.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ if TYPE_CHECKING:
     from backend.domain.models.itinerary import Itinerary
     from backend.domain.models.trip_request import TripRequest
     from backend.domain.services.validator import ViolationReport
+    from backend.domain.models.resolution import ResolutionOption
 
 MAX_REPAIR_ATTEMPTS: int = 3
 
@@ -60,34 +64,52 @@ class WorkflowState:
     system_prompt: str = ""
     user_prompt: str = ""
     generated_text: str = ""
+    raw_response: str = ""  # Alias kept for checkpoint deserialization
 
     # ── Parsed & validated output ──────────────────────────────────────────────
-    itinerary: "Itinerary | None" = None
+    itinerary: "Itinerary | None" = None          # Current working itinerary
+    original_itinerary: "Itinerary | None" = None  # Preserved for partial repair
+    parsed_itinerary: "Itinerary | None" = None    # After parser node
+    merged_itinerary: "Itinerary | None" = None    # After partial-repair merge
     violation_report: "ViolationReport | None" = None
+    validation_report: "ViolationReport | None" = None  # Alias for checkpoint compat
+    resolutions: list[Any] = field(default_factory=list)  # HITL resolution options
 
     # ── Repair loop control ────────────────────────────────────────────────────
     repair_attempts: int = 0
+    repair_count: int = 0          # Alias kept for checkpoint deserialization
+    max_repairs: int = MAX_REPAIR_ATTEMPTS
     repair_prompt: str = ""
+
+    # ── Workflow control (HITL / resume support) ───────────────────────────────
+    workflow_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_status: str = "RUNNING"   # RUNNING | SUCCESS | FAILED | WAITING_FOR_HUMAN
+    planning_mode: str = "full"        # full | partial | regenerate
+    resume_from_node: str = ""         # Node to resume from on checkpoint restore
+    user_decision: str = ""            # Human-in-the-loop decision string
+    target_days: list[int] = field(default_factory=list)  # Days targeted for partial replan
+    user_replan_reason: str = ""       # Reason provided by user for partial replan
+    itinerary_id: str = ""             # ID assigned after persistence
 
     # ── Final status ───────────────────────────────────────────────────────────
     # "running" | "success" | "failed" | "repair"
     status: str = "running"
     error_message: str = ""
 
-    # ── Observability (consumed by future WorkflowTrace layer) ─────────────────
+    # ── Observability ──────────────────────────────────────────────────────────
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     current_node: str = ""
     visited_nodes: list[str] = field(default_factory=list)
     trace_events: list[TraceEvent] = field(default_factory=list)
 
     # ── SSE event stream (yielded to FastAPI) ──────────────────────────────────
-    # Nodes append dicts here; the UseCase drains them incrementally.
     sse_events: list[dict] = field(default_factory=list)
 
     def enter_node(self, name: str) -> None:
         """Called by each node on entry to keep observability fields up-to-date."""
         self.current_node = name
         self.visited_nodes.append(name)
+        self.workflow_status = "RUNNING"
 
     def emit(self, event: dict) -> None:
         """Append an SSE-ready event dict for the FastAPI layer to stream."""
@@ -96,3 +118,9 @@ class WorkflowState:
     def record_trace(self, event: TraceEvent) -> None:
         """Append a trace event for the Observability layer."""
         self.trace_events.append(event)
+
+
+# ── Backward-compatible alias ──────────────────────────────────────────────────
+# The checkpoint repository and port layer were written using CartenaState.
+# This alias ensures zero import breakage without renaming the class.
+CartenaState = WorkflowState
