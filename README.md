@@ -289,3 +289,33 @@ npm run dev
 
 ---
 
+## 13. Configuration
+
+| Variable | Description | Example |
+|----------|----------|--------|
+| `FOUNDRY_BASE_URL` | LLM server address (Ollama/Foundry) | `http://127.0.0.1:11434/v1` |
+| `FOUNDRY_LLM_MODEL` | Model name to use for inference | `phi4:mini` |
+| `API_PORT` | Port for FastAPI to run on | `8000` |
+| `CHROMA_PERSIST_DIR` | Vector database directory | `./data/chroma` |
+| `SQLITE_DB_PATH` | User history database path | `./data/cartena.db` |
+
+---
+
+## 14. Vision & Roadmap
+
+**Current**
+- A reliable, self-repairing, locally executed "Agentic Travel Planner" for travel itineraries.
+
+**Near-term Goals**
+- Real-time weather and POI (Point of Interest) API integrations.
+- One-click deployment via Docker containerization.
+
+**Long-term Vision**
+- Evolve into an adaptable, reusable "General Agentic Workflow Platform" across different domains.
+
+---
+
+## 15. License
+
+This project is licensed under the [MIT License](LICENSE).
+
