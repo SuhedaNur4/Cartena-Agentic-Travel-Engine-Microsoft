@@ -18,7 +18,7 @@ without touching any external API contract.
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
 
 from backend.application.ports.embedding_port import IEmbeddingClient
 from backend.application.ports.itinerary_repo_port import IItineraryRepository
@@ -27,6 +27,10 @@ from backend.application.ports.online_adapter_port import IOnlineAdapter
 from backend.application.ports.vector_store_port import IVectorStore
 from backend.application.use_cases.state_graph import StateGraphEngine
 from backend.domain.models.trip_request import TripRequest
+
+if TYPE_CHECKING:
+    from backend.application.ports.checkpoint_repo_port import ICheckpointRepository
+    from backend.application.ports.trace_repo_port import ITraceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +55,9 @@ class GenerateItineraryUseCase:
         vector_store: IVectorStore,
         itinerary_repo: IItineraryRepository,
         online_adapters: list[IOnlineAdapter] | None = None,
+        # Optional observability ports — safe to omit in tests
+        checkpoint_repo: "ICheckpointRepository | None" = None,
+        trace_repo: "ITraceRepository | None" = None,
     ) -> None:
         self._engine = StateGraphEngine(
             llm_client=llm_client,
@@ -58,6 +65,8 @@ class GenerateItineraryUseCase:
             vector_store=vector_store,
             itinerary_repo=itinerary_repo,
             online_adapters=online_adapters,
+            checkpoint_repo=checkpoint_repo,
+            trace_repo=trace_repo,
         )
 
     async def execute(self, request: TripRequest) -> AsyncIterator[dict]:
