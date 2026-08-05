@@ -73,6 +73,9 @@ class GenerateItineraryUseCase:
         """
         Async generator: yields SSE-ready event dicts.
 
+        Declared with `yield` so it is a true async generator — the FastAPI
+        router can safely do `async for event in use_case.execute(request)`.
+
         Event types (mirrors the previous linear pipeline contract):
           {"type": "stage",   "name": "<string>"}
           {"type": "chunk",   "content": "<token>"}
@@ -80,9 +83,6 @@ class GenerateItineraryUseCase:
           {"type": "done",    "id": "<uuid>", "day_count": <int>, ...}
           {"type": "error",   "message": "<string>"}
         """
-        return self._run(request)
-
-    async def _run(self, request: TripRequest) -> AsyncIterator[dict]:
         try:
             async for event in self._engine.run(request):
                 yield event
