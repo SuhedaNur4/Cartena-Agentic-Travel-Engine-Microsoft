@@ -80,11 +80,19 @@ def build(settings: Settings) -> Container:
     from backend.infrastructure.embeddings.ollama_embedding_adapter import OllamaEmbeddingAdapter
 
     # ── Infrastructure ────────────────────────────────────────────────────────
-    llm_client = FoundryLLMAdapter(
-        base_url=settings.foundry_base_url,
-        model=settings.foundry_llm_model,
-        api_key=settings.foundry_api_key,
-    )
+    if getattr(settings, "llm_provider", "foundry") == "ollama":
+        from backend.infrastructure.llm.ollama_llm_adapter import OllamaLLMAdapter
+        ollama_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
+        llm_client = OllamaLLMAdapter(
+            base_url=ollama_base_url,
+            model=getattr(settings, "ollama_llm_model", "phi4-mini:latest"),
+        )
+    else:
+        llm_client = FoundryLLMAdapter(
+            base_url=settings.foundry_base_url,
+            model=settings.foundry_llm_model,
+            api_key=settings.foundry_api_key,
+        )
 
     # Embeddings — Ollama nomic-embed-text (768-dim) running in local Docker container.
     # LocalEmbeddingAdapter (sentence-transformers, all-MiniLM-L6-v2, 384-dim) is kept
