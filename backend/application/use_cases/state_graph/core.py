@@ -94,86 +94,119 @@ class StateGraphEngine:
         self._checkpoint_repo = checkpoint_repo
         self._trace_repo = trace_repo
 
-    async def run(self, request: TripRequest) -> AsyncIterator[dict]:
+    async def run(self, request: TripRequest | None = None, workflow_id: str | None = None) -> AsyncIterator[dict]:
         """
         Execute the full agentic workflow and yield SSE events.
 
         Each node may append events to state.sse_events; this method drains
         the queue after every node call so the client sees real-time progress.
         """
-        state = WorkflowState(request=request)
+        state = None
+        if workflow_id and self._checkpoint_repo:
+            state = await self._checkpoint_repo.get(workflow_id)
+        if not state:
+            if not request:
+                yield {"type": "error", "message": "TripRequest is required for new workflows."}
+                return
+            state = WorkflowState(request=request)
+            if workflow_id:
+                state.workflow_id = workflow_id
 
         async def drain() -> AsyncIterator[dict]:
             """Flush all pending SSE events from state to the caller."""
             while state.sse_events:
                 yield state.sse_events.pop(0)
 
+        async def save_checkpoint(next_node: str) -> None:
+            """Save the current state with the node to resume from on next run."""
+            if self._checkpoint_repo:
+                state.resume_from_node = next_node
+                await self._checkpoint_repo.save(state.workflow_id, state)
+
+        # If resuming, we skip all nodes until we hit the resume target
+        skip = bool(state.resume_from_node)
+
         try:
             # ── Phase 1: Context Gathering ─────────────────────────────────────
-            state = await planner_node(state, self._online_adapters)
-            async for event in drain():
-                yield event
+            if skip and state.resume_from_node == "planner": skip = False
+            if not skip:
+                state = await planner_node(state, self._online_adapters)
+                await save_checkpoint("constraint_analysis")
+                async for event in drain():
+                    yield event
 
-            state = await constraint_node(state)
-            async for event in drain():
-                yield event
+            if skip and state.resume_from_node == "constraint_analysis": skip = False
+            if not skip:
+                state = await constraint_node(state)
+                await save_checkpoint("retriever")
+                async for event in drain():
+                    yield event
 
-            state = await retriever_node(state, self._embeddings, self._vector_store)
-            async for event in drain():
-                yield event
+            if skip and state.resume_from_node == "retriever": skip = False
+            if not skip:
+                state = await retriever_node(state, self._embeddings, self._vector_store)
+                await save_checkpoint("generator")
+                async for event in drain():
+                    yield event
 
             # ── Phase 2: Generation + Validation (with Repair Loop) ────────────
             while True:
-                # Generator always runs at the start of each loop iteration.
-                state = await generator_node(state, self._llm)
-                async for event in drain():
-                    yield event
+                if skip and state.resume_from_node == "generator": skip = False
+                if not skip:
+                    state = await generator_node(state, self._llm)
+                    await save_checkpoint("parser")
+                    async for event in drain():
+                        yield event
 
-                # Parse the raw LLM output into a typed Itinerary.
-                state = await parser_node(state, self._llm)
-                async for event in drain():
-                    yield event
+                if skip and state.resume_from_node == "parser": skip = False
+                if not skip:
+                    state = await parser_node(state, self._llm)
+                    async for event in drain():
+                        yield event
 
-                next_after_parser = route_after_parser(state)
-                if next_after_parser == "failed":
-                    # Parser emitted an error event; nothing left to do.
-                    return
+                    next_after_parser = route_after_parser(state)
+                    if next_after_parser == "failed":
+                        return
+                    await save_checkpoint("validator")
 
-                # Validate the parsed Itinerary against deterministic rules.
-                state = await validator_node(state)
-                async for event in drain():
-                    yield event
+                if skip and state.resume_from_node == "validator": skip = False
+                if not skip:
+                    state = await validator_node(state)
+                    async for event in drain():
+                        yield event
+
+                # We are definitely past the resume point once we hit validation logic
+                skip = False
 
                 next_after_validator = route_after_validator(state)
 
                 if next_after_validator == "finalize":
-                    # Validation passed — persist and emit done.
+                    await save_checkpoint("finalize")
                     state = await finalize_node(state, self._repo)
+                    # Clear resume node on completion so it doesn't resume again
+                    await save_checkpoint("")
                     async for event in drain():
                         yield event
                     return
 
                 if next_after_validator == "repair":
-                    # Build repair prompt; loop back to Generator.
+                    await save_checkpoint("repair")
                     state = await repair_node(state)
+                    await save_checkpoint("generator")
                     async for event in drain():
                         yield event
-                    # Continue the while loop → next iteration hits generator_node.
                     continue
 
-                # next_after_validator == "failed": repair budget exhausted.
                 logger.error(
                     "Repair loop exhausted after %d attempts for '%s'.",
                     state.repair_attempts,
-                    request.destination,
+                    state.request.destination if state.request else "unknown",
                 )
                 yield {
                     "type": "error",
                     "message": (
-                        f"Could not produce a valid itinerary for "
-                        f"'{request.destination}' after "
-                        f"{state.repair_attempts} repair attempt(s). "
-                        f"Please try again."
+                        f"Could not produce a valid itinerary after "
+                        f"{state.repair_attempts} repair attempt(s). Please try again."
                     ),
                 }
                 return
