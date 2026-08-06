@@ -123,6 +123,52 @@ class StateGraphEngine:
                 state.resume_from_node = next_node
                 await self._checkpoint_repo.save(state.workflow_id, state)
 
+        # Record if this run was resumed (for trace metadata)
+        was_resumed = bool(state.resume_from_node)
+        resume_target = state.resume_from_node
+
+        async def _save_trace(final_status: str) -> None:
+            """Converts state trace events into a WorkflowTrace and persists it."""
+            if not self._trace_repo:
+                return
+            
+            from backend.domain.models.trace import WorkflowTrace, TraceEvent as DomainTraceEvent
+            from datetime import datetime
+            
+            domain_events = []
+            for ev in state.trace_events:
+                domain_ev = DomainTraceEvent(
+                    timestamp=ev.timestamp,
+                    node=ev.node,
+                    duration_ms=ev.duration_ms,
+                    planning_mode=state.planning_mode,
+                    repair_count=state.repair_attempts,
+                    workflow_status=state.workflow_status,
+                    validation_result=state.violation_report.is_valid if state.violation_report else None,
+                    model_name=self._llm.model_name if hasattr(self._llm, 'model_name') else None,
+                    error_type=None,
+                    metadata=dict(ev.metadata)
+                )
+                domain_events.append(domain_ev)
+                
+            if domain_events and was_resumed:
+                domain_events[0].metadata["resumed"] = True
+                domain_events[0].metadata["resume_from_node"] = resume_target
+
+            total_duration = sum(e.duration_ms for e in domain_events)
+            trace = WorkflowTrace(
+                workflow_id=state.workflow_id,
+                start_time=domain_events[0].timestamp if domain_events else datetime.utcnow(),
+                end_time=datetime.utcnow(),
+                events=domain_events,
+                final_status=final_status,
+                total_duration_ms=total_duration
+            )
+            try:
+                await self._trace_repo.save(trace)
+            except Exception as e:
+                logger.error("Failed to save trace: %s", e)
+
         # If resuming, we skip all nodes until we hit the resume target
         skip = bool(state.resume_from_node)
 
@@ -166,6 +212,7 @@ class StateGraphEngine:
 
                     next_after_parser = route_after_parser(state)
                     if next_after_parser == "failed":
+                        await _save_trace("FAILED")
                         return
                     await save_checkpoint("validator")
 
@@ -187,6 +234,7 @@ class StateGraphEngine:
                     await save_checkpoint("")
                     async for event in drain():
                         yield event
+                    await _save_trace("SUCCESS")
                     return
 
                 if next_after_validator == "repair":
@@ -209,8 +257,10 @@ class StateGraphEngine:
                         f"{state.repair_attempts} repair attempt(s). Please try again."
                     ),
                 }
+                await _save_trace("FAILED")
                 return
 
         except Exception as exc:  # noqa: BLE001
             logger.exception("Unhandled exception in StateGraphEngine: %s", exc)
             yield {"type": "error", "message": str(exc)}
+            await _save_trace("EXCEPTION")
