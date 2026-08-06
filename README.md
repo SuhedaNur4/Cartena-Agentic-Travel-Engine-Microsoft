@@ -16,7 +16,7 @@ to create reliable travel itineraries.
 
 ## Project Context
 
-Cartena was developed as part of the Microsoft Summer Internship Program, exploring reliable AI agent architectures using Microsoft Foundry Local and modern LLM orchestration techniques.
+Cartena was developed as part of the Microsoft Summer Internship Program, exploring reliable AI agent architectures using local LLMs (Ollama) and modern orchestration techniques.
 
 ---
 
@@ -97,7 +97,7 @@ sequenceDiagram
     participant U as User
     participant WE as State Graph Orchestrator
     participant RAG as ChromaDB (Vector Database)
-    participant LLM as Local LLM (Qwen3)
+    participant LLM as Local LLM (phi4-mini)
     participant V as Validation Layer
     
     U->>WE: "Plan a 3-day trip to Tokyo under $500"
@@ -180,9 +180,20 @@ The system is designed to measure the quality of its outputs and track the perfo
 
 ## 8. Tech Stack
 
+### Development Runtime
+
+**Default Provider:**
+- Ollama (Phi-4-mini)
+
+**Supported Providers:**
+- Ollama
+
+The LLM layer is provider-agnostic. New providers can be added by implementing the shared LLM interface without modifying the application workflow.
+
+### Stack Details
 **Backend:** Python 3.11+, FastAPI, Pydantic, aiosqlite, ChromaDB, Sentence-Transformers  
 **Frontend:** React 19, TypeScript, Vite, Zustand, React-Router v7  
-**AI Interface:** Microsoft Foundry Local, Ollama, OpenAI API (Optional)
+**AI Interface:** Ollama (phi4-mini & nomic-embed-text)
 
 ---
 
@@ -201,7 +212,7 @@ cartena/
 │   │   ├── entities/          # Pure Python models (Itinerary, DayPlan, Activity)
 │   │   └── exceptions/        # Custom Domain errors (ConstraintViolationError)
 │   ├── infrastructure/        # External World Integrations (Side Effects)
-│   │   ├── llm/               # Foundry Local LLM and Ollama adapters
+│   │   ├── llm/               # Ollama adapters
 │   │   ├── rag/               # ChromaDB client and Sentence Transformers
 │   │   └── persistence/       # SQLite database CRUD operations
 │   └── core/                  # Cross-cutting concerns
@@ -223,7 +234,7 @@ cartena/
 Key engineering problems encountered and resolved in the orchestration layer while developing Cartena's local LLM-based agentic architecture:
 
 ### 1. LLM Markdown Tag Interference (JSON Parsing Failure)
-*   **Issue:** Local models like Qwen3-4B and Phi-4 frequently wrapped their outputs in ````json ... ```` markdown tags, despite system prompts explicitly instructing them to "Return only JSON". This caused Pydantic's `model_validate_json` function to crash, sending a technically correct plan into an unnecessary *Repair Loop*.
+*   **Issue:** Local models like Phi-4-mini frequently wrapped their outputs in ````json ... ```` markdown tags, despite system prompts explicitly instructing them to "Return only JSON". This caused Pydantic's `model_validate_json` function to crash, sending a technically correct plan into an unnecessary *Repair Loop*.
 *   **Solution:** A `JSONSanitizer` node was added immediately before the validation layer. This node uses Regex to isolate the block between the first `{` and the last `}`, stripping the markdown tags. False errors on the First Pass and unnecessary repair loops were noticeably reduced.
 
 ### 2. Context Window Overflow in Vector Search
@@ -242,7 +253,7 @@ Key engineering problems encountered and resolved in the orchestration layer whi
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- Ollama or Microsoft Foundry Local
+- Ollama
 
 ### 1. Clone the Repository
 ```bash
@@ -268,12 +279,12 @@ npm install
 
 ## 12. Quick Start
 
-### Prepare the LLM (Microsoft Foundry Local)
-To run the project locally, start Microsoft Foundry Local:
+### Prepare the LLM (Ollama)
+To run the project locally, start Ollama:
 ```bash
-foundry service start
+ollama serve
 ```
-*Note: The system will automatically recognize the model based on the `FOUNDRY_LLM_MODEL` value in the `.env` file (e.g., `Phi-4-mini-instruct-cuda-gpu:5`).*
+*Note: Make sure to pull `phi4-mini:latest` and `nomic-embed-text`.*
 
 ### Start the Services
 **Backend:** (In a separate terminal, at the project root)
@@ -293,8 +304,8 @@ npm run dev
 
 | Variable | Description | Example |
 |----------|----------|--------|
-| `FOUNDRY_BASE_URL` | LLM server address (Ollama/Foundry) | `http://127.0.0.1:11434/v1` |
-| `FOUNDRY_LLM_MODEL` | Model name to use for inference | `phi4:mini` |
+| `LLM_PROVIDER` | LLM Provider | `ollama` |
+| `OLLAMA_LLM_MODEL` | Model name to use for inference | `phi4-mini:latest` |
 | `API_PORT` | Port for FastAPI to run on | `8000` |
 | `CHROMA_PERSIST_DIR` | Vector database directory | `./data/chroma` |
 | `SQLITE_DB_PATH` | User history database path | `./data/cartena.db` |
