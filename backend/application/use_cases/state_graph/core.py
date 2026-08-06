@@ -238,6 +238,22 @@ class StateGraphEngine:
                     return
 
                 if next_after_validator == "repair":
+                    # HITL TRIGGER
+                    if state.violation_report and getattr(state.violation_report, "severity", "ERROR") == "CRITICAL":
+                        state.status = "WAITING_HUMAN"
+                        # Resume from constraint_analysis because human resolution updates inputs
+                        await save_checkpoint("constraint_analysis")
+                        logger.warning("HITL triggered. Suspending workflow %s.", state.workflow_id)
+                        yield {
+                            "type": "human_review_required",
+                            "workflow_id": state.workflow_id,
+                            "violations": state.violation_report.hard_violations,
+                            "resolutions": [r.__dict__ for r in state.violation_report.resolutions],
+                            "message": "Critical violation detected. Human authority required."
+                        }
+                        # We do NOT save a failed trace here, we just suspend.
+                        return
+
                     await save_checkpoint("repair")
                     state = await repair_node(state)
                     await save_checkpoint("generator")

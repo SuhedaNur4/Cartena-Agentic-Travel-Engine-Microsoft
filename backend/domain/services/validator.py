@@ -25,6 +25,7 @@ class ViolationReport:
     resolutions: list[ResolutionOption] = field(default_factory=list)
     constraint_score: float = 1.0
     quality_score: float = 1.0
+    severity: str = "ERROR"
 
     def to_repair_prompt(self, expected_days: int | None = None) -> str:
         """
@@ -244,12 +245,14 @@ class ItineraryValidator:
 
         # ── 7. Generate HITL Resolutions for Hard Violations ────────────────
         resolutions = []
+        severity = "ERROR"
         if not is_valid:
             from backend.domain.models.resolution import ResolutionOption, ResolutionAction
             
             # Check if budget was a problem
             budget_failed = any("budget" in v.lower() for v in hard_violations)
             if budget_failed:
+                severity = "CRITICAL" # Trigger HITL
                 if itinerary.trip_request.budget.value != "high":
                     resolutions.append(ResolutionOption(
                         id="increase_budget",
@@ -257,7 +260,7 @@ class ItineraryValidator:
                         action=ResolutionAction(type="update_budget", value="high")
                     ))
             
-            # Generic resolutions
+            # Generic resolutions (always added on failure as fallback logic if user wants to override)
             resolutions.append(ResolutionOption(
                 id="relax_constraints",
                 label="Kısıtlamaları esnet (Aktiviteleri daha ucuz/uygun seç)",
@@ -276,6 +279,7 @@ class ItineraryValidator:
             resolutions=resolutions,
             constraint_score=round(constraint_score, 2),
             quality_score=round(quality_score, 2),
+            severity=severity,
         )
 
 

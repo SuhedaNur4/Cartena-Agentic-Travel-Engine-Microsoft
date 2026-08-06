@@ -17,15 +17,20 @@ Design note:
 from __future__ import annotations
 
 import uuid
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+
+from backend.domain.models.trip_request import BudgetLevel
 
 if TYPE_CHECKING:
     from backend.domain.models.itinerary import Itinerary
     from backend.domain.models.trip_request import TripRequest
     from backend.domain.services.validator import ViolationReport
     from backend.domain.models.resolution import ResolutionOption
+
+logger = logging.getLogger(__name__)
 
 MAX_REPAIR_ATTEMPTS: int = 3
 
@@ -112,8 +117,26 @@ class WorkflowState:
         self.workflow_status = "RUNNING"
 
     def emit(self, event: dict) -> None:
-        """Append an SSE-ready event dict for the FastAPI layer to stream."""
+        """Queue an SSE event to be streamed to the client."""
         self.sse_events.append(event)
+
+    def apply_human_resolution(self, resolution_id: str) -> None:
+        """
+        Applies the human's chosen resolution to the workflow state.
+        This mutates the underlying domain properties (like Budget) so that
+        the next node (e.g. constraint_analysis) correctly rebuilds the world context.
+        """
+        import dataclasses
+        if resolution_id == "increase_budget" and self.request:
+            # We explicitly update the domain request parameter
+            self.request = dataclasses.replace(self.request, budget=BudgetLevel.HIGH)
+        elif resolution_id == "relax_constraints" and self.request:
+            new_notes = f"{self.request.notes} (User override: relax constraints and allow cheaper/flexible alternatives.)"
+            self.request = dataclasses.replace(self.request, notes=new_notes)
+        elif resolution_id == "retry":
+            pass # Just retry with same constraints
+        else:
+            logger.warning("Unknown human resolution ID: %s", resolution_id)
 
     def record_trace(self, event: TraceEvent) -> None:
         """Append a trace event for the Observability layer."""
