@@ -94,7 +94,15 @@ class StateGraphEngine:
         self._checkpoint_repo = checkpoint_repo
         self._trace_repo = trace_repo
 
-    async def run(self, request: TripRequest | None = None, workflow_id: str | None = None) -> AsyncIterator[dict]:
+    async def run(
+        self,
+        request: TripRequest | None = None,
+        workflow_id: str | None = None,
+        planning_mode: str = "full",
+        original_itinerary=None,
+        target_days: list[int] | None = None,
+        user_replan_reason: str = ""
+    ) -> AsyncIterator[dict]:
         """
         Execute the full agentic workflow and yield SSE events.
 
@@ -108,7 +116,13 @@ class StateGraphEngine:
             if not request:
                 yield {"type": "error", "message": "TripRequest is required for new workflows."}
                 return
-            state = WorkflowState(request=request)
+            state = WorkflowState(
+                request=request,
+                planning_mode=planning_mode,
+                original_itinerary=original_itinerary,
+                target_days=target_days or [],
+                user_replan_reason=user_replan_reason
+            )
             if workflow_id:
                 state.workflow_id = workflow_id
 

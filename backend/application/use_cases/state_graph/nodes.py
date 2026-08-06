@@ -369,18 +369,47 @@ async def finalize_node(
     state.emit({"type": "stage", "name": "Saving itinerary"})
 
     state.itinerary.kb_miss = state.kb_miss
-    itinerary_id = await itinerary_repo.save(state.itinerary)
-    state.itinerary.id = itinerary_id
+    if state.planning_mode == "PARTIAL" and state.original_itinerary:
+        target = state.target_days[0] if state.target_days else 1
+        new_day = next((d for d in state.itinerary.days if d.day_number == target), None)
+        if not new_day and state.itinerary.days:
+            new_day = state.itinerary.days[0]
+            new_day.day_number = target
+            
+        if new_day:
+            for i, d in enumerate(state.original_itinerary.days):
+                if d.day_number == target:
+                    state.original_itinerary.days[i] = new_day
+                    break
+            
+            state.original_itinerary.id = state.original_itinerary.id or state.itinerary.id
+            itinerary_id = await itinerary_repo.save(state.original_itinerary)
+            
+            import dataclasses
+            state.emit(
+                {
+                    "type": "done",
+                    "id": itinerary_id,
+                    "day": dataclasses.asdict(new_day),
+                    "kb_miss": state.kb_miss,
+                    "is_complete": True,
+                }
+            )
+        else:
+            state.emit({"type": "error", "message": "Failed to extract regenerated day."})
+    else:
+        itinerary_id = await itinerary_repo.save(state.itinerary)
+        state.itinerary.id = itinerary_id
 
-    state.emit(
-        {
-            "type": "done",
-            "id": itinerary_id,
-            "kb_miss": state.kb_miss,
-            "day_count": len(state.itinerary.days),
-            "is_complete": True,
-        }
-    )
+        state.emit(
+            {
+                "type": "done",
+                "id": itinerary_id,
+                "kb_miss": state.kb_miss,
+                "day_count": len(state.itinerary.days),
+                "is_complete": True,
+            }
+        )
 
     state.record_trace(
         TraceEvent(

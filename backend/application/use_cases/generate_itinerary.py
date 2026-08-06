@@ -69,7 +69,15 @@ class GenerateItineraryUseCase:
             trace_repo=trace_repo,
         )
 
-    async def execute(self, request: TripRequest | None = None, workflow_id: str | None = None) -> AsyncIterator[dict]:
+    async def execute(
+        self,
+        request: TripRequest | None = None,
+        workflow_id: str | None = None,
+        planning_mode: str = "full",
+        original_itinerary=None,
+        target_days: list[int] | None = None,
+        user_replan_reason: str = ""
+    ) -> AsyncIterator[dict]:
         """
         Async generator: yields SSE-ready event dicts.
 
@@ -84,7 +92,14 @@ class GenerateItineraryUseCase:
           {"type": "error",   "message": "<string>"}
         """
         try:
-            async for event in self._engine.run(request, workflow_id):
+            async for event in self._engine.run(
+                request,
+                workflow_id,
+                planning_mode=planning_mode,
+                original_itinerary=original_itinerary,
+                target_days=target_days,
+                user_replan_reason=user_replan_reason
+            ):
                 yield event
         except Exception as exc:  # noqa: BLE001
             logger.exception("GenerateItineraryUseCase unhandled error: %s", exc)
