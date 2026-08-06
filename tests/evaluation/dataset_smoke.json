@@ -1,0 +1,330 @@
+[
+  {
+    "id": "succ_01",
+    "category": "success",
+    "input": {
+      "destination": "Tokyo",
+      "duration_days": 5,
+      "budget": "medium",
+      "interests": [
+        "culture",
+        "food"
+      ],
+      "notes": "First time, want sushi."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_02",
+    "category": "success",
+    "input": {
+      "destination": "Paris",
+      "duration_days": 3,
+      "budget": "high",
+      "interests": [
+        "shopping",
+        "culture"
+      ],
+      "notes": "Romantic trip."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_03",
+    "category": "success",
+    "input": {
+      "destination": "London",
+      "duration_days": 2,
+      "budget": "low",
+      "interests": [
+        "history",
+        "nature"
+      ],
+      "notes": "Student backpacker."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_04",
+    "category": "success",
+    "input": {
+      "destination": "Rome",
+      "duration_days": 4,
+      "budget": "medium",
+      "interests": [
+        "history"
+      ],
+      "notes": "Love Colosseum."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_05",
+    "category": "success",
+    "input": {
+      "destination": "New York",
+      "duration_days": 3,
+      "budget": "high",
+      "interests": [
+        "nightlife",
+        "food"
+      ],
+      "notes": "Party weekend."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_06",
+    "category": "success",
+    "input": {
+      "destination": "Kyoto",
+      "duration_days": 2,
+      "budget": "medium",
+      "interests": [
+        "culture"
+      ],
+      "notes": "Temples only."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_07",
+    "category": "success",
+    "input": {
+      "destination": "Barcelona",
+      "duration_days": 4,
+      "budget": "medium",
+      "interests": [
+        "beach",
+        "food"
+      ],
+      "notes": "Tapas and sun."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "succ_08",
+    "category": "success",
+    "input": {
+      "destination": "Berlin",
+      "duration_days": 3,
+      "budget": "low",
+      "interests": [
+        "history",
+        "nightlife"
+      ],
+      "notes": "Cheap beer and clubs."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "rep_01",
+    "category": "repair",
+    "input": {
+      "destination": "Paris",
+      "duration_days": 3,
+      "budget": "low",
+      "interests": [
+        "shopping",
+        "luxury"
+      ],
+      "notes": "Want to buy Chanel on a low budget."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "rep_02",
+    "category": "repair",
+    "input": {
+      "destination": "Tokyo",
+      "duration_days": 2,
+      "budget": "low",
+      "interests": [
+        "food"
+      ],
+      "notes": "Need 5 michelin star meals every day."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "rep_03",
+    "category": "repair",
+    "input": {
+      "destination": "London",
+      "duration_days": 5,
+      "budget": "low",
+      "interests": [
+        "history"
+      ],
+      "notes": "I want to visit the same museum 5 days in a row."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "rep_04",
+    "category": "repair",
+    "input": {
+      "destination": "Rome",
+      "duration_days": 1,
+      "budget": "low",
+      "interests": [
+        "history"
+      ],
+      "notes": "I want to see 20 different monuments today."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "rep_05",
+    "category": "repair",
+    "input": {
+      "destination": "New York",
+      "duration_days": 3,
+      "budget": "medium",
+      "interests": [
+        "nature"
+      ],
+      "notes": "Only outdoor activities but it is raining all day."
+    },
+    "expected": {
+      "status": "SUCCESS"
+    }
+  },
+  {
+    "id": "hitl_01",
+    "category": "hitl",
+    "input": {
+      "destination": "Monaco",
+      "duration_days": 7,
+      "budget": "low",
+      "interests": [
+        "luxury",
+        "shopping"
+      ],
+      "notes": "Helicopter rides and yacht parties."
+    },
+    "expected": {
+      "status": "WAITING_HUMAN"
+    }
+  },
+  {
+    "id": "hitl_02",
+    "category": "hitl",
+    "input": {
+      "destination": "Zurich",
+      "duration_days": 5,
+      "budget": "low",
+      "interests": [
+        "shopping"
+      ],
+      "notes": "Buying Rolexes."
+    },
+    "expected": {
+      "status": "WAITING_HUMAN"
+    }
+  },
+  {
+    "id": "hitl_03",
+    "category": "hitl",
+    "input": {
+      "destination": "Dubai",
+      "duration_days": 4,
+      "budget": "low",
+      "interests": [
+        "luxury"
+      ],
+      "notes": "Staying at Burj Al Arab."
+    },
+    "expected": {
+      "status": "WAITING_HUMAN"
+    }
+  },
+  {
+    "id": "fail_01",
+    "category": "failure",
+    "input": {
+      "destination": "",
+      "duration_days": 3,
+      "budget": "medium",
+      "interests": [
+        "food"
+      ],
+      "notes": "No destination"
+    },
+    "expected": {
+      "status": "ERROR"
+    }
+  },
+  {
+    "id": "fail_02",
+    "category": "failure",
+    "input": {
+      "destination": "Paris",
+      "duration_days": -5,
+      "budget": "medium",
+      "interests": [
+        "food"
+      ],
+      "notes": "Negative days"
+    },
+    "expected": {
+      "status": "ERROR"
+    }
+  },
+  {
+    "id": "fail_03",
+    "category": "failure",
+    "input": {
+      "destination": "London",
+      "duration_days": 3,
+      "budget": "invalid_budget",
+      "interests": [
+        "food"
+      ],
+      "notes": "Bad budget enum"
+    },
+    "expected": {
+      "status": "ERROR"
+    }
+  },
+  {
+    "id": "fail_04",
+    "category": "failure",
+    "input": {
+      "destination": "Rome",
+      "duration_days": 300,
+      "budget": "high",
+      "interests": [
+        "food"
+      ],
+      "notes": "Too many days"
+    },
+    "expected": {
+      "status": "ERROR"
+    }
+  }
+]
