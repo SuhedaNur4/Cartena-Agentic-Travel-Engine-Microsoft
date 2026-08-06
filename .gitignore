@@ -15,6 +15,8 @@ frontend/dist/
 # ── Generated data ────────────────────────────────────────────────────────────
 # Ignore all runtime databases, traces, and chroma indexes
 data/
+.checkpoints/
+.traces/
 
 # ── OS ────────────────────────────────────────────────────────────────────────
 .DS_Store
@@ -28,3 +30,16 @@ docs/*
 md docs/
 reports/
 eval/
+
+cartena_development_diary.md
+
+cartena_product_notes.md
+test_generate.py
+
+# ── Scratch Scripts & Logs ────────────────────────────────────────────────────
+*.txt
+cleanup*.py
+debug_*.py
+fix_*.py
+run_*.py
+ignore_append.py
