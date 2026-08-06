@@ -50,7 +50,8 @@ class RegenerateDayUseCase:
         day_number: int,
         reason: str = "",
     ) -> AsyncIterator[dict]:
-        return self._run(itinerary_id, day_number, reason)
+        async for event in self._run(itinerary_id, day_number, reason):
+            yield event
 
     async def _run(
         self,
@@ -93,11 +94,9 @@ class RegenerateDayUseCase:
                 rag_chunks=unique_chunks,
                 online_context=[],
                 chunks_are_off_topic=kb_miss,
+                target_day=day_number,
+                user_replan_reason=reason,
             )
-            # Append user's reason if provided
-            if reason:
-                user_prompt += f"\n\nUser note for this day: {reason}"
-            user_prompt += f"\n\nGenerate ONLY Day {day_number}. Output a single day object."
 
             full_response = ""
             async for token in self._llm.stream(
@@ -106,27 +105,53 @@ class RegenerateDayUseCase:
                 full_response += token
                 yield {"type": "chunk", "content": token}
 
-            # Parse and validate the new day
-            new_itinerary = itinerary_parser.parse(
+            # Parse the new day
+            parsed_itinerary = itinerary_parser.parse(
                 raw_response=full_response,
                 trip_request=request,
                 model_used=self._llm.model_name,
             )
 
-            if not new_itinerary.days:
+            if not parsed_itinerary or not parsed_itinerary.days:
                 yield {"type": "error", "message": "Could not parse regenerated day."}
                 return
 
-            new_day = new_itinerary.days[0]
+            new_day = parsed_itinerary.days[0]
             new_day.day_number = day_number
 
-            # Merge back into the original itinerary
-            for idx, day in enumerate(itinerary.days):
+            import copy
+            from backend.domain.services import constraint_map
+            
+            # Deep copy the original itinerary to preserve properties
+            merged_itinerary = copy.deepcopy(itinerary)
+            
+            # Replace only the target day
+            for idx, day in enumerate(merged_itinerary.days):
                 if day.day_number == day_number:
-                    itinerary.days[idx] = new_day
+                    merged_itinerary.days[idx] = new_day
                     break
 
-            await self._repo.update(itinerary)
+            # Validate the FULL merged itinerary against constraints
+            constraints = constraint_map.build(request)
+            report = ItineraryValidator.validate(
+                itinerary=merged_itinerary,
+                constraints=constraints,
+            )
+            
+            if not report.is_valid:
+                logger.error("Partial regeneration validation failed: %s", report.hard_violations)
+                yield {
+                    "type": "error", 
+                    "message": f"Validation failed for regenerated day: {report.hard_violations[0]}"
+                }
+                return
+
+            # Inherit quality scores and save
+            merged_itinerary.constraint_score = report.constraint_score
+            merged_itinerary.quality_score = report.quality_score
+            merged_itinerary.kb_miss = kb_miss
+            
+            await self._repo.save(merged_itinerary)
             yield {"type": "done", "id": itinerary_id, "day_number": day_number}
 
         except Exception as exc:  # noqa: BLE001

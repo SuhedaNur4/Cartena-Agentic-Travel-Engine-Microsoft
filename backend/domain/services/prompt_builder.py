@@ -84,47 +84,28 @@ def build(
     rag_chunks: list[str],
     online_context: list[str] | None = None,
     chunks_are_off_topic: bool = False,
+    target_day: int | None = None,
+    user_replan_reason: str = "",
 ) -> tuple[str, str]:
     """
     RAG destekli prompt üretir.
-
-    Args:
-        rag_chunks: Prompt'a eklenecek bilgi parçaları.
-        online_context: Canlı gerçek dünya verisi (hava durumu, POI).
-            Boş/None ise prompt'a hiç blok eklenmez.
-        chunks_are_off_topic: True ise chunk'lar hedef şehre AİT DEĞİLDİR
-            (KB miss fallback'i). Prompt bunu modele açıkça söyler; aksi
-            hâlde model başka şehrin gerçeklerini hedef şehre atfeder.
-
-    Returns:
-        (system_prompt, user_prompt)
     """
-    # Üç bilgi durumu. Başlık ile içerik asla çelişmemeli: önceki hâl,
-    # chunk yokken bile "şu gerçekler getirildi" diyordu.
     if not rag_chunks:
         knowledge_header = _NO_KNOWLEDGE_HEADER.format(destination=request.destination)
         rag_context = ""
     elif chunks_are_off_topic:
         knowledge_header = _OFF_TOPIC_HEADER.format(destination=request.destination)
-        # Payload sanitization: label each off-topic chunk explicitly so the LLM
-        # cannot silently misattribute another city's facts to the destination.
         rag_context = "\n\n".join(
             f"[STYLE REFERENCE — NOT about {request.destination}]\n{chunk}"
             for chunk in rag_chunks
         )
     else:
         knowledge_header = _ON_TOPIC_HEADER.format(destination=request.destination)
-        # Payload sanitization: label each chunk with its origin so the LLM
-        # treats each piece as a distinct, citable fact rather than a continuous block.
-        # This mirrors the principle of never sending raw ambiguous data to the LLM —
-        # each chunk is pre-labelled to constrain how the model can interpret it.
         rag_context = "\n\n".join(
             f"[KB FACT {i} — {request.destination}]\n{chunk}"
             for i, chunk in enumerate(rag_chunks, 1)
         )
 
-    # Canlı bağlam (hava durumu, POI). Adapter'lar bugün stub ve boş liste
-    # döndürüyor; blok yalnızca gerçek veri geldiğinde görünür.
     online_context_block = ""
     if online_context:
         items = "\n".join(f"• {item}" for item in online_context)
@@ -134,13 +115,36 @@ def build(
         )
 
     interests_str = ", ".join(i.value for i in request.interests)
-    notes_str = request.notes.strip() if request.notes else "None provided."
-    skeleton_block = get_skeleton(request.duration_days)
+    
+    # Handle Partial Regeneration Mode
+    if target_day is not None:
+        skeleton_block = get_skeleton(request.duration_days, target_day=target_day)
+        
+        # Build targeted instructions
+        partial_notes = []
+        if request.notes:
+            partial_notes.append(request.notes.strip())
+        if user_replan_reason:
+            partial_notes.append(f"User note specifically for Day {target_day}: {user_replan_reason}")
+            
+        notes_str = "\n".join(partial_notes) if partial_notes else "None provided."
+        
+        # Append strict instructions to only generate one day
+        notes_str += f"\n\n>> PARTIAL REGENERATION INSTRUCTIONS:\n"
+        notes_str += f">> Regenerate ONLY Day {target_day}.\n"
+        notes_str += f">> Keep all other days unchanged. Do NOT output them.\n"
+        
+        duration_for_prompt = 1  # We are only asking for 1 day
+    else:
+        notes_str = request.notes.strip() if request.notes else "None provided."
+        skeleton_block = get_skeleton(request.duration_days)
+        duration_for_prompt = request.duration_days
+
     budget_guidance = _build_budget_guidance(request)
 
     user_prompt = _USER_TEMPLATE.format(
         destination=request.destination,
-        duration_days=request.duration_days,
+        duration_days=duration_for_prompt,
         budget=request.budget.value,
         interests=interests_str,
         notes=notes_str,
@@ -154,10 +158,12 @@ def build(
     return _SYSTEM_PROMPT, user_prompt
 
 
-def get_skeleton(duration_days: int) -> str:
+def get_skeleton(duration_days: int, target_day: int | None = None) -> str:
     """Returns a visual multi-day Markdown skeleton anchor for the LLM."""
     lines = []
-    for day_num in range(1, duration_days + 1):
+    days_to_generate = [target_day] if target_day is not None else range(1, duration_days + 1)
+    
+    for day_num in days_to_generate:
         lines.append(f"Day {day_num}: [Title of Day {day_num}]")
         lines.append("Morning: [description of morning activities with location/costs]")
         lines.append("Afternoon: [description of afternoon activities with location/costs]")
@@ -168,7 +174,7 @@ def get_skeleton(duration_days: int) -> str:
         lines.append("Tips:")
         lines.append("- [tip 1]")
         lines.append("- [tip 2]")
-        if day_num < duration_days:
+        if target_day is None and day_num < duration_days:
             lines.append("")
     return "\n".join(lines)
 
