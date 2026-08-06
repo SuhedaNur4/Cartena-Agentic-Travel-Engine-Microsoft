@@ -16,7 +16,7 @@ router = APIRouter()
 @router.get(
     "/health",
     response_model=HealthResponseDTO,
-    summary="Check system health (Foundry Local + ChromaDB status)",
+    summary="Check system health (Ollama + ChromaDB status)",
 )
 async def health_check(request: Request) -> HealthResponseDTO:
     container: Container = request.app.state.container

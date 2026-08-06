@@ -32,7 +32,6 @@ from backend.infrastructure.repositories.json_trace_repo import JSONFileTraceRep
 import os
 from backend.infrastructure.adapters.online_stubs import POIAdapter, WeatherAdapter
 from backend.infrastructure.knowledge_base.ingestion_service import IngestionService
-from backend.infrastructure.llm.foundry_llm_adapter import FoundryLLMAdapter
 from backend.infrastructure.persistence.sqlite_itinerary_repo import SQLiteItineraryRepository
 from backend.infrastructure.vector_store.chroma_adapter import ChromaAdapter
 
@@ -80,19 +79,12 @@ def build(settings: Settings) -> Container:
     from backend.infrastructure.embeddings.ollama_embedding_adapter import OllamaEmbeddingAdapter
 
     # ── Infrastructure ────────────────────────────────────────────────────────
-    if getattr(settings, "llm_provider", "foundry") == "ollama":
-        from backend.infrastructure.llm.ollama_llm_adapter import OllamaLLMAdapter
-        ollama_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
-        llm_client = OllamaLLMAdapter(
-            base_url=ollama_base_url,
-            model=getattr(settings, "ollama_llm_model", "phi4-mini:latest"),
-        )
-    else:
-        llm_client = FoundryLLMAdapter(
-            base_url=settings.foundry_base_url,
-            model=settings.foundry_llm_model,
-            api_key=settings.foundry_api_key,
-        )
+    from backend.infrastructure.llm.ollama_llm_adapter import OllamaLLMAdapter
+    ollama_base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
+    llm_client = OllamaLLMAdapter(
+        base_url=ollama_base_url,
+        model=getattr(settings, "ollama_llm_model", "phi4-mini:latest"),
+    )
 
     # Embeddings — Ollama nomic-embed-text (768-dim) running in local Docker container.
     # LocalEmbeddingAdapter (sentence-transformers, all-MiniLM-L6-v2, 384-dim) is kept

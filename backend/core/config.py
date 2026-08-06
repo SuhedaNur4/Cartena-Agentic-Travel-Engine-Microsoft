@@ -19,19 +19,11 @@ class Settings(BaseSettings):
     )
 
     # ── LLM Provider ──────────────────────────────────────────────────────────
-    llm_provider: str = "foundry"  # "foundry" or "ollama"
+    llm_provider: str = "ollama"  # Default to ollama
     
-    # ── Foundry Local ─────────────────────────────────────────────────────────
-    foundry_base_url: str = "http://localhost:5273/v1"
-    foundry_api_key: str = "foundry"
-    foundry_llm_model: str = "phi-4-mini"
     
     # ── Ollama Local ──────────────────────────────────────────────────────────
     ollama_llm_model: str = "phi4-mini:latest"
-    # KULLANILMIYOR: Foundry Local kataloğunda embedding modeli yok.
-    # Embedding LocalEmbeddingAdapter (sentence-transformers) ile çalışır.
-    # Geriye dönük .env uyumluluğu için duruyor; hiçbir şeyi yapılandırmaz.
-    foundry_embedding_model: str = "qwen3-embedding-0.6b"
 
     # ── ChromaDB ──────────────────────────────────────────────────────────────
     chroma_persist_dir: str = "./data/chroma"

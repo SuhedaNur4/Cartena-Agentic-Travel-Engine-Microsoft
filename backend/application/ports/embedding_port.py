@@ -10,8 +10,7 @@ class IEmbeddingClient(ABC):
     Metni embedding vektörüne çeviren sözleşme.
 
     Aktif adapter: LocalEmbeddingAdapter (sentence-transformers,
-    all-MiniLM-L6-v2). Foundry Local kataloğunda embedding modeli
-    bulunmadığı için Foundry adapter'ı kullanılmıyor.
+    all-MiniLM-L6-v2).
     """
 
     @abstractmethod

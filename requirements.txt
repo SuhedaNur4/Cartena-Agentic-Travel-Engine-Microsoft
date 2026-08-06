@@ -9,7 +9,6 @@ python-multipart>=0.0.9       # required for FastAPI form data
 # embedding sentence-transformers ile yerelde çalışır.
 sentence-transformers>=3.0.0
 
-# ── LLM Generation (OpenAI-compatible client → Foundry Local API) ──────────────
 openai>=1.35.0
 
 # ── Vector Store ───────────────────────────────────────────────────────────────
