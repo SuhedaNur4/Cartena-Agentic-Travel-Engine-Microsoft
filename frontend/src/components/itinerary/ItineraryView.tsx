@@ -17,8 +17,8 @@ export function ItineraryView({ itinerary }: ItineraryViewProps) {
   const handleToggleFavorite = async () => {
     setIsToggling(true)
     try {
-      const res = await fetch(`/api/v1/itineraries/${itinerary.id}/favorite`, {
-        method: 'PUT',
+      const res = await fetch(`/api/v1/itineraries/${itinerary.id}/toggle-favorite`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_favorite: !isFavorite })
       })
