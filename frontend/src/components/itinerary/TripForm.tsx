@@ -57,7 +57,9 @@ export function TripForm({ onGenerate, isGenerating, onCancel, engineOffline = f
   const [budget, setBudget] = useState<BudgetLevel>('medium')
   const [interests, setInterests] = useState<Interest[]>(['culture', 'food'])
   const [notes, setNotes] = useState('')
-  const [startDate, setStartDate] = useState('')   
+  const [startDate, setStartDate] = useState('')
+  const [arrivalCity, setArrivalCity] = useState('')
+  const [departureCity, setDepartureCity] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const toggleInterest = (interest: Interest) => {
@@ -92,6 +94,10 @@ export function TripForm({ onGenerate, isGenerating, onCancel, engineOffline = f
       interests,
       notes: notes.trim(),
       start_date: startDate || undefined,
+      flight_context: (arrivalCity.trim() || departureCity.trim()) ? {
+        arrival_city: arrivalCity.trim() || undefined,
+        departure_city: departureCity.trim() || undefined
+      } : undefined
     })
   }
 
@@ -164,6 +170,39 @@ export function TripForm({ onGenerate, isGenerating, onCancel, engineOffline = f
             min={new Date().toISOString().split('T')[0]}
             style={inputStyle}
           />
+        </div>
+
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <label style={labelStyle} htmlFor="arrival-city">Arrival City</label>
+              <span style={{ fontSize: '12px', color: '#b5a593', fontFamily: '"DM Sans", sans-serif' }}>optional</span>
+            </div>
+            <input
+              id="arrival-city"
+              type="text"
+              placeholder="e.g. Tokyo"
+              value={arrivalCity}
+              onChange={(e) => setArrivalCity(e.target.value)}
+              disabled={isDisabled}
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <label style={labelStyle} htmlFor="departure-city">Departure City</label>
+              <span style={{ fontSize: '12px', color: '#b5a593', fontFamily: '"DM Sans", sans-serif' }}>optional</span>
+            </div>
+            <input
+              id="departure-city"
+              type="text"
+              placeholder="e.g. Osaka"
+              value={departureCity}
+              onChange={(e) => setDepartureCity(e.target.value)}
+              disabled={isDisabled}
+              style={inputStyle}
+            />
+          </div>
         </div>
 
         <div>

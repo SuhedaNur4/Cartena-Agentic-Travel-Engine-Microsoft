@@ -10,6 +10,11 @@ export type Interest =
   | 'nature'
   | 'nightlife'
 
+export interface FlightContext {
+  arrival_city?: string
+  departure_city?: string
+}
+
 export interface TripRequest {
   destination: string
   duration_days: number
@@ -17,6 +22,7 @@ export interface TripRequest {
   interests: Interest[]
   notes?: string
   start_date?: string   
+  flight_context?: FlightContext
 }
 
 export interface ActivityBlock {
