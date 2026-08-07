@@ -1,4 +1,4 @@
-﻿"""
+"""
 Domain service: ConstraintMap
 
 Pure function — no I/O, no external dependencies.
@@ -59,7 +59,8 @@ def build(request: TripRequest) -> dict:
 
     # -- Budget ----------------------------------------------------------------
     constraints["budget_level"] = request.budget.value
-    constraints["daily_budget_limit_usd"] = _daily_budget_usd(request.budget, request.destination)
+    dest_str = ", ".join(request.destinations)
+    constraints["daily_budget_limit_usd"] = _daily_budget_usd(request.budget, dest_str)
     constraints["currency"] = "USD"
 
     return constraints

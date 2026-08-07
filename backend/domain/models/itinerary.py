@@ -67,8 +67,12 @@ class Itinerary:
     quality_score: float = 1.0      # 0.0 to 1.0 soft metrics score from Python Validator
 
     @property
+    def destinations(self) -> tuple[str, ...]:
+        return self.trip_request.destinations
+
+    @property
     def destination(self) -> str:
-        return self.trip_request.destination
+        return ", ".join(self.trip_request.destinations)
 
     @property
     def duration_days(self) -> int:

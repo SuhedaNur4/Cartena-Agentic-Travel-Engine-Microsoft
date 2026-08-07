@@ -90,19 +90,20 @@ def build(
     """
     RAG destekli prompt üretir.
     """
+    dest_str = ", ".join(request.destinations)
     if not rag_chunks:
-        knowledge_header = _NO_KNOWLEDGE_HEADER.format(destination=request.destination)
+        knowledge_header = _NO_KNOWLEDGE_HEADER.format(destination=dest_str)
         rag_context = ""
     elif chunks_are_off_topic:
-        knowledge_header = _OFF_TOPIC_HEADER.format(destination=request.destination)
+        knowledge_header = _OFF_TOPIC_HEADER.format(destination=dest_str)
         rag_context = "\n\n".join(
-            f"[STYLE REFERENCE — NOT about {request.destination}]\n{chunk}"
+            f"[STYLE REFERENCE — NOT about {dest_str}]\n{chunk}"
             for chunk in rag_chunks
         )
     else:
-        knowledge_header = _ON_TOPIC_HEADER.format(destination=request.destination)
+        knowledge_header = _ON_TOPIC_HEADER.format(destination=dest_str)
         rag_context = "\n\n".join(
-            f"[KB FACT {i} — {request.destination}]\n{chunk}"
+            f"[KB FACT {i} — {dest_str}]\n{chunk}"
             for i, chunk in enumerate(rag_chunks, 1)
         )
 
@@ -111,7 +112,7 @@ def build(
         items = "\n".join(f"• {item}" for item in online_context)
         online_context_block = (
             f"\n[LIVE CONTEXT]\n"
-            f"Current real-world information for {request.destination}:\n{items}\n"
+            f"Current real-world information for {dest_str}:\n{items}\n"
         )
 
     interests_str = ", ".join(i.value for i in request.interests)
@@ -137,13 +138,19 @@ def build(
         duration_for_prompt = 1  # We are only asking for 1 day
     else:
         notes_str = request.notes.strip() if request.notes else "None provided."
+        
+        if hasattr(request, "allocations") and request.allocations:
+            alloc_str = ", ".join(f"{v} days in {k}" for k, v in request.allocations.items())
+            notes_str += f"\n\n>> TRIP ALLOCATION INSTRUCTIONS:\n"
+            notes_str += f">> You MUST strictly distribute the {request.duration_days} days as follows: {alloc_str}.\n"
+            
         skeleton_block = get_skeleton(request.duration_days)
         duration_for_prompt = request.duration_days
 
     budget_guidance = _build_budget_guidance(request)
 
     user_prompt = _USER_TEMPLATE.format(
-        destination=request.destination,
+        destination=", ".join(request.destinations),
         duration_days=duration_for_prompt,
         budget=request.budget.value,
         interests=interests_str,
@@ -190,7 +197,8 @@ def _build_budget_guidance(request: TripRequest) -> str:
     The actual arithmetic enforcement is done by the Python Validator —
     this is only a planning reference to anchor the LLM's suggestions.
     """
-    limit = _constraint_map._daily_budget_usd(request.budget, request.destination)
+    dest_str = ", ".join(request.destinations)
+    limit = _constraint_map._daily_budget_usd(request.budget, dest_str)
     tier = request.budget.value
     if limit is None:
         return f"Luxury tier — no daily ceiling. Prioritize quality and exclusivity."

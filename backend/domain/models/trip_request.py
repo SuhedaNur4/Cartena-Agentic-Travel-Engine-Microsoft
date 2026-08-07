@@ -36,16 +36,18 @@ class Interest(str, Enum):
 class TripRequest:
     """Immutable value object representing a user's travel planning request."""
 
-    destination: str
+    destinations: tuple[str, ...]
     duration_days: int
     budget: BudgetLevel
     interests: tuple[Interest, ...]
     notes: str = ""
     start_date: date | None = None   # Optional trip start date; used for weather forecast
+    allocation_mode: str = "AI"      # "USER" or "AI"
+    allocations: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.destination.strip():
-            raise ValueError("Destination cannot be empty.")
+        if not self.destinations:
+            raise ValueError("At least one destination must be provided.")
         if not (1 <= self.duration_days <= 30):
             raise ValueError("Trip duration must be between 1 and 30 days.")
         if not self.interests:
@@ -55,7 +57,8 @@ class TripRequest:
     def query_text(self) -> str:
         """Human-readable summary used as embedding input."""
         interests_str = ", ".join(i.value for i in self.interests)
+        dest_str = " and ".join(self.destinations)
         return (
-            f"{self.destination} {self.duration_days} day trip "
+            f"{dest_str} {self.duration_days} day trip "
             f"{self.budget.value} budget {interests_str}"
         )
