@@ -26,6 +26,8 @@ from backend.application.ports.llm_port import ILLMClient
 from backend.application.ports.online_adapter_port import IOnlineAdapter
 from backend.application.ports.vector_store_port import IVectorStore
 from backend.application.use_cases.state_graph import StateGraphEngine
+from backend.application.use_cases.allocation.engine import AllocationEngine
+from backend.application.services.knowledge_service import KnowledgeService
 from backend.domain.models.trip_request import TripRequest
 
 if TYPE_CHECKING:
@@ -55,12 +57,15 @@ class GenerateItineraryUseCase:
         vector_store: IVectorStore,
         itinerary_repo: IItineraryRepository,
         online_adapters: list[IOnlineAdapter] | None = None,
-        # Optional observability ports — safe to omit in tests
         checkpoint_repo: "ICheckpointRepository | None" = None,
         trace_repo: "ITraceRepository | None" = None,
+        allocation_engine: AllocationEngine | None = None,
+        knowledge_service: KnowledgeService | None = None,
     ) -> None:
+        self._allocation_engine = allocation_engine
         self._engine = StateGraphEngine(
             llm_client=llm_client,
+            knowledge_service=knowledge_service,
             embedding_client=embedding_client,
             vector_store=vector_store,
             itinerary_repo=itinerary_repo,
@@ -92,6 +97,10 @@ class GenerateItineraryUseCase:
           {"type": "error",   "message": "<string>"}
         """
         try:
+            if request and self._allocation_engine and not workflow_id:
+                yield {"type": "stage", "name": "Allocating trip days"}
+                request = await self._allocation_engine.allocate(request)
+
             async for event in self._engine.run(
                 request,
                 workflow_id,

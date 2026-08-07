@@ -85,8 +85,10 @@ class StateGraphEngine:
         online_adapters: list[IOnlineAdapter] | None = None,
         checkpoint_repo: Any | None = None,
         trace_repo: Any | None = None,
+        knowledge_service: Any | None = None,
     ) -> None:
         self._llm = llm_client
+        self._knowledge_service = knowledge_service
         self._embeddings = embedding_client
         self._vector_store = vector_store
         self._repo = itinerary_repo
@@ -204,7 +206,7 @@ class StateGraphEngine:
 
             if skip and state.resume_from_node == "retriever": skip = False
             if not skip:
-                state = await retriever_node(state, self._embeddings, self._vector_store)
+                state = await retriever_node(state, self._knowledge_service)
                 await save_checkpoint("generator")
                 async for event in drain():
                     yield event
@@ -254,7 +256,7 @@ class StateGraphEngine:
                 if next_after_validator == "repair":
                     # HITL TRIGGER
                     if state.violation_report and getattr(state.violation_report, "severity", "ERROR") == "CRITICAL":
-                        state.status = "WAITING_HUMAN"
+                        state.workflow_status = "WAITING_HUMAN"
                         # Resume from constraint_analysis because human resolution updates inputs
                         await save_checkpoint("constraint_analysis")
                         logger.warning("HITL triggered. Suspending workflow %s.", state.workflow_id)
@@ -278,7 +280,7 @@ class StateGraphEngine:
                 logger.error(
                     "Repair loop exhausted after %d attempts for '%s'.",
                     state.repair_attempts,
-                    state.request.destination if state.request else "unknown",
+                    ", ".join(state.request.destinations) if state.request else "unknown",
                 )
                 yield {
                     "type": "error",

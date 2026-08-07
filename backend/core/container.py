@@ -34,7 +34,11 @@ from backend.infrastructure.adapters.online_stubs import POIAdapter, WeatherAdap
 from backend.infrastructure.knowledge_base.ingestion_service import IngestionService
 from backend.infrastructure.persistence.sqlite_itinerary_repo import SQLiteItineraryRepository
 from backend.infrastructure.vector_store.chroma_adapter import ChromaAdapter
-
+from backend.infrastructure.knowledge_base.resolver import DestinationResolver
+from backend.infrastructure.knowledge_base.local_provider import LocalKnowledgeProvider
+from backend.infrastructure.knowledge_base.wikipedia_provider import WikipediaProvider
+from backend.application.services.knowledge_service import KnowledgeService
+from backend.application.use_cases.allocation.engine import AllocationEngine
 
 @dataclass
 class Container:
@@ -58,6 +62,8 @@ class Container:
 
     # ── Services ──────────────────────────────────────────────────────────────
     ingestion_service: IngestionService
+    knowledge_service: KnowledgeService
+    allocation_engine: AllocationEngine
 
     # ── Use Cases ─────────────────────────────────────────────────────────────
     generate_itinerary: GenerateItineraryUseCase
@@ -125,6 +131,19 @@ def build(settings: Settings) -> Container:
         embedding_client=embedding_client,
     )
 
+    resolver = DestinationResolver()
+    local_provider = LocalKnowledgeProvider(
+        embedding_client=embedding_client,
+        vector_store=vector_store,
+    )
+    wiki_provider = WikipediaProvider()
+    knowledge_service = KnowledgeService(
+        resolver=resolver,
+        providers=[local_provider, wiki_provider],
+    )
+    
+    allocation_engine = AllocationEngine(llm_client=llm_client)
+
     # ── Use cases ─────────────────────────────────────────────────────────────
     generate_uc = GenerateItineraryUseCase(
         llm_client=llm_client,
@@ -134,6 +153,8 @@ def build(settings: Settings) -> Container:
         checkpoint_repo=checkpoint_repo,
         trace_repo=trace_repo,
         online_adapters=online_adapters,
+        allocation_engine=allocation_engine,
+        knowledge_service=knowledge_service,
     )
     get_uc = GetItineraryUseCase(itinerary_repo)
     list_uc = ListItinerariesUseCase(itinerary_repo)
@@ -142,8 +163,7 @@ def build(settings: Settings) -> Container:
     update_day_uc = UpdateDayUseCase(repo=itinerary_repo)
     regenerate_day_uc = RegenerateDayUseCase(
         llm_client=llm_client,
-        embedding_client=embedding_client,
-        vector_store=vector_store,
+        knowledge_service=knowledge_service,
         itinerary_repo=itinerary_repo,
     )
     toggle_favorite_uc = ToggleFavoriteUseCase(repo=itinerary_repo)
@@ -161,6 +181,8 @@ def build(settings: Settings) -> Container:
         trace_repo=trace_repo,
         online_adapters=online_adapters,
         ingestion_service=ingestion_service,
+        knowledge_service=knowledge_service,
+        allocation_engine=allocation_engine,
         generate_itinerary=generate_uc,
         get_itinerary=get_uc,
         list_itineraries=list_uc,

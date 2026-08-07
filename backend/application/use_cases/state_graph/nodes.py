@@ -101,57 +101,45 @@ async def constraint_node(state: WorkflowState) -> WorkflowState:
 
 async def retriever_node(
     state: WorkflowState,
-    embedding_client: IEmbeddingClient,
-    vector_store: IVectorStore,
+    knowledge_service: Any,
 ) -> WorkflowState:
     """
-    Embeds the trip query and retrieves top-k semantically relevant KB chunks.
-    Falls back to unfiltered retrieval if no city-specific chunks are found.
-    Emits context metadata event so the frontend can show a KB-miss badge.
+    Retrieves top-k semantically relevant KB chunks using KnowledgeService.
+    Iterates over all requested destinations and fetches context.
     """
     t0 = time.monotonic()
     state.enter_node("retriever")
-    state.emit({"type": "stage", "name": "Retrieving local knowledge"})
+    state.emit({"type": "stage", "name": "Retrieving destination knowledge"})
 
-    query_vector = await embedding_client.embed(state.request.query_text)
-    city_key = normalize_city(state.request.destination)
+    all_chunks = []
+    has_kb_miss = False
 
-    # IVectorStore.retrieve() returns list[tuple[KnowledgeChunk, float]].
-    # We extract only the content strings — the float similarity scores are
-    # not consumed downstream yet (reserved for EPIC 3 observability).
-    raw_chunks = await vector_store.retrieve(
-        query_vector=query_vector,
-        city=city_key,
-        top_k=5,
-    )
-    # Deduplicate by content while preserving order.
-    unique_contents: list[str] = list(
-        dict.fromkeys(chunk.content for chunk, _score in raw_chunks)
-    )
-    kb_miss = len(unique_contents) == 0
+    for dest in state.request.destinations:
+        try:
+            docs = await knowledge_service.get_context_for_destination(dest, state.request.query_text)
+            for doc in docs:
+                # Format the doc as a chunk for RAG
+                chunk_str = f"Source: {doc.source.upper()} | Title: {doc.title}\n{doc.content}"
+                all_chunks.append(chunk_str)
+        except Exception as e:
+            logger.error(f"Failed to fetch knowledge for {dest}: {e}")
+            has_kb_miss = True
+            # Epic 7 Guardrail: Controlled Failure
+            state.emit({
+                "type": "error",
+                "message": f"Destination '{dest}' could not be resolved or found in any knowledge base."
+            })
+            raise RuntimeError(f"Destination '{dest}' could not be resolved.")
 
-    if kb_miss:
-        logger.warning(
-            "No KB chunks found for '%s'. Falling back to unfiltered retrieval.",
-            state.request.destination,
-        )
-        fallback_raw = await vector_store.retrieve(
-            query_vector=query_vector,
-            city=None,
-            top_k=3,
-        )
-        unique_contents = list(
-            dict.fromkeys(chunk.content for chunk, _score in fallback_raw)
-        )
-
+    unique_contents = list(dict.fromkeys(all_chunks))
     state.rag_chunks = unique_contents
-    state.kb_miss = kb_miss
+    state.kb_miss = has_kb_miss
 
     state.emit(
         {
             "type": "context",
             "kb_chunks": len(unique_contents),
-            "kb_miss": kb_miss,
+            "kb_miss": has_kb_miss,
         }
     )
 
@@ -160,7 +148,7 @@ async def retriever_node(
             node="retriever",
             timestamp=datetime.utcnow(),
             duration_ms=(time.monotonic() - t0) * 1000,
-            metadata={"kb_chunks": len(unique_contents), "kb_miss": kb_miss},
+            metadata={"kb_chunks": len(unique_contents), "kb_miss": has_kb_miss},
         )
     )
     return state
@@ -201,7 +189,7 @@ async def generator_node(
 
     logger.info(
         "Generator streaming (%s, attempt %d).",
-        state.request.destination,
+        ", ".join(state.request.destinations),
         state.repair_attempts + 1,
     )
 

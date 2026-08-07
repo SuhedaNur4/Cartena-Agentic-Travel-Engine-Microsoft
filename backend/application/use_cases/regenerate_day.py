@@ -14,10 +14,9 @@ from __future__ import annotations
 import logging
 from typing import AsyncIterator
 
-from backend.application.ports.embedding_port import IEmbeddingClient
 from backend.application.ports.itinerary_repo_port import IItineraryRepository
 from backend.application.ports.llm_port import ILLMClient
-from backend.application.ports.vector_store_port import IVectorStore
+from backend.application.services.knowledge_service import KnowledgeService
 from backend.domain.services import itinerary_parser, prompt_builder
 from backend.domain.services.city import normalize_city
 from backend.domain.services.validator import ItineraryValidator
@@ -35,13 +34,11 @@ class RegenerateDayUseCase:
     def __init__(
         self,
         llm_client: ILLMClient,
-        embedding_client: IEmbeddingClient,
-        vector_store: IVectorStore,
+        knowledge_service: KnowledgeService,
         itinerary_repo: IItineraryRepository,
     ) -> None:
         self._llm = llm_client
-        self._embeddings = embedding_client
-        self._vector_store = vector_store
+        self._knowledge_service = knowledge_service
         self._repo = itinerary_repo
 
     async def execute(
@@ -70,21 +67,21 @@ class RegenerateDayUseCase:
             # Build a focused trip request for just this day
             request = itinerary.trip_request
 
-            # RAG retrieval
-            query_vector = await self._embeddings.embed(request.query_text)
-            city_key = normalize_city(request.destination)
-            chunks = await self._vector_store.retrieve(
-                query_vector=query_vector,
-                city=city_key,
-                top_k=5,
-            )
-            unique_chunks = list(dict.fromkeys(chunks))
-            kb_miss = len(unique_chunks) == 0
-            if kb_miss:
-                fallback = await self._vector_store.retrieve(
-                    query_vector=query_vector, city=None, top_k=3
-                )
-                unique_chunks = list(dict.fromkeys(fallback))
+            # RAG retrieval via KnowledgeService
+            all_chunks = []
+            has_kb_miss = False
+            for dest in request.destinations:
+                try:
+                    docs = await self._knowledge_service.get_context_for_destination(dest, request.query_text)
+                    for doc in docs:
+                        chunk_str = f"Source: {doc.source.upper()} | Title: {doc.title}\n{doc.content}"
+                        all_chunks.append(chunk_str)
+                except Exception as e:
+                    logger.error(f"Failed to fetch knowledge for {dest}: {e}")
+                    has_kb_miss = True
+            
+            unique_chunks = list(dict.fromkeys(all_chunks))
+            kb_miss = has_kb_miss
 
             yield {"type": "stage", "name": f"Regenerating Day {day_number}"}
 

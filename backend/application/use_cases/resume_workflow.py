@@ -36,7 +36,8 @@ class ResumeWorkflowUseCase:
         workflow_id: str,
         user_decision: str = "",
     ) -> AsyncIterator[dict]:
-        return self._run(workflow_id, user_decision)
+        async for event in self._run(workflow_id, user_decision):
+            yield event
 
     async def _run(
         self,
@@ -52,14 +53,29 @@ class ResumeWorkflowUseCase:
                 }
                 return
 
+            if state.workflow_status == "WAITING_HUMAN" and user_decision:
+                resolutions = state.violation_report.resolutions if state.violation_report else []
+                action = next((r.action for r in resolutions if r.id == user_decision), None)
+                if not action:
+                    yield {"type": "error", "message": f"Invalid resolution ID: {user_decision}"}
+                    return
+                if action.type == "update_budget":
+                    from backend.domain.models.trip_request import BudgetLevel
+                    import dataclasses
+                    state.request = dataclasses.replace(state.request, budget=BudgetLevel(action.value))
+                elif action.type == "append_reason":
+                    state.user_replan_reason = action.value
+
             state.user_decision = user_decision
             state.workflow_status = "RUNNING"
 
             yield {"type": "stage", "name": "Resuming workflow"}
 
+            await self._checkpoint_repo.save(workflow_id, state)
+            
             # Delegate back to the engine via the generate use case
             async for event in self._generate_uc._engine.run(
-                state.request, resume_state=state
+                workflow_id=workflow_id
             ):
                 yield event
 
