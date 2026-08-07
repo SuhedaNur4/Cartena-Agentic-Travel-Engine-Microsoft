@@ -6,7 +6,7 @@ import logging
 
 from backend.infrastructure.knowledge_base.resolver import DestinationResolver
 from backend.application.ports.knowledge_provider import IDestinationKnowledgeProvider
-from backend.domain.models.destination import KnowledgeDocument
+from backend.domain.models.destination import KnowledgeDocument, ResolvedDestination
 
 logger = logging.getLogger(__name__)
 
@@ -44,3 +44,35 @@ class KnowledgeService:
         # Epic 7 Guardrail: Controlled Failure over Hallucination
         logger.error(f"Failed to resolve destination '{input_name}' across all providers.")
         raise DestinationResolutionError(f"Destination '{input_name}' could not be resolved.")
+
+    async def check_destination_exists(self, resolved_dest: ResolvedDestination) -> bool:
+        """Returns True if the destination can be found in any provider without fetching full context."""
+        for provider in self.providers:
+            try:
+                docs = await provider.get_destination_context(resolved_dest, "city overview")
+                if docs:
+                    return True
+            except Exception:
+                pass
+        return False
+
+    async def parse_and_resolve_destinations(self, raw_input: str) -> tuple[ResolvedDestination, ...]:
+        """
+        Resolver-aware parsing:
+        1. Try to resolve the entire string. If it exists in KB, return it.
+        2. If not, split by comma, and try resolving the parts.
+        """
+        full_resolved = self.resolver.resolve(raw_input)
+        exists = await self.check_destination_exists(full_resolved)
+        if exists:
+            return (full_resolved,)
+            
+        parts = [p.strip() for p in raw_input.split(",") if p.strip()]
+        if len(parts) > 1:
+            results = []
+            for part in parts:
+                part_resolved = self.resolver.resolve(part)
+                results.append(part_resolved)
+            return tuple(results)
+            
+        return (full_resolved,)
