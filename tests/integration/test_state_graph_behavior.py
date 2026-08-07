@@ -18,7 +18,7 @@ from backend.application.use_cases.generate_itinerary import GenerateItineraryUs
 @pytest.fixture
 def mock_trip_request():
     return TripRequest(
-        destination="Tokyo",
+        destinations=("Tokyo",),
         duration_days=1,
         budget=BudgetLevel.MEDIUM,
         interests=(Interest.CULTURE,),
@@ -61,20 +61,28 @@ def mock_dependencies():
     
     embedding_client = AsyncMock()
     embedding_client.embed.return_value = [0.1, 0.2]
+    from backend.application.services.knowledge_service import KnowledgeService
+    from backend.infrastructure.knowledge_base.resolver import DestinationResolver
+    mock_ks = AsyncMock(spec=KnowledgeService)
+    mock_ks.get_context_for_destination.return_value = []
     
-    vector_store = AsyncMock()
-    # retrieve needs to return list of (Chunk, score)
-    vector_store.retrieve.return_value = []
+    checkpoint_repo = AsyncMock()
+    checkpoint_repo.get.return_value = None
     
-    itinerary_repo = AsyncMock()
-    itinerary_repo.save.return_value = "test-id-123"
+    llm_client = AsyncMock()
+    async def fake_stream(*args, **kwargs):
+        yield "chunk"
+    llm_client.stream = fake_stream
     
     return {
         "llm_client": llm_client,
-        "embedding_client": embedding_client,
-        "vector_store": vector_store,
-        "itinerary_repo": itinerary_repo,
-        "online_adapters": []
+        "embedding_client": AsyncMock(),
+        "vector_store": AsyncMock(),
+        "itinerary_repo": AsyncMock(),
+        "online_adapters": [],
+        "checkpoint_repo": checkpoint_repo,
+        "trace_repo": AsyncMock(),
+        "knowledge_service": mock_ks,
     }
 
 
@@ -96,29 +104,18 @@ async def test_graph_valid_path(
 
     use_case = GenerateItineraryUseCase(**mock_dependencies)
     
-    # We will intercept the state after execution
-    final_state = None
-    
-    # We must actually capture the state. 
-    # Let's monkeypatch the graph run to capture the state
-    original_run = use_case._graph.run
-    
-    async def wrapped_run(state: CartenaState):
-        nonlocal final_state
-        final_state = state
-        async for event in original_run(state):
-            yield event
-            
-    use_case._graph.run = wrapped_run
-    
     # Execute
-    async for _ in use_case.execute(mock_trip_request):
+    async for _ in use_case.execute(mock_trip_request, workflow_id="test_wf"):
         pass
 
+    save_calls = mock_dependencies["checkpoint_repo"].save.call_args_list
+    assert len(save_calls) > 0, "State was never saved to checkpoint"
+    final_state = save_calls[-1][0][1]
+
     assert final_state is not None
-    assert final_state.visited_nodes == ["retrieve", "generate", "validate", "save"]
-    assert final_state.validation_report.is_valid is True
-    assert final_state.repair_count == 0
+    assert final_state.visited_nodes == ["planner", "constraint_analysis", "retriever", "generator", "parser", "validator", "finalize"]
+    assert final_state.violation_report.is_valid is True
+    assert final_state.repair_attempts == 0
 
 
 @pytest.mark.asyncio
@@ -141,24 +138,31 @@ async def test_graph_repair_path(
 
     use_case = GenerateItineraryUseCase(**mock_dependencies)
     
-    final_state = None
-    original_run = use_case._graph.run
-    async def wrapped_run(state: CartenaState):
-        nonlocal final_state
-        final_state = state
-        async for event in original_run(state):
-            yield event
-    use_case._graph.run = wrapped_run
+    async for _ in use_case.execute(mock_trip_request, workflow_id='test_wf'):
+
     
-    async for _ in use_case.execute(mock_trip_request):
         pass
+
+    
+    
+
+    
+    save_calls = mock_dependencies['checkpoint_repo'].save.call_args_list
+
+    
+    assert len(save_calls) > 0, 'State was never saved to checkpoint'
+
+    
+    final_state = save_calls[-1][0][1]
 
     assert final_state is not None
     assert final_state.visited_nodes == [
-        "retrieve", "generate", "validate", "generate", "validate", "save"
+        "planner", "constraint_analysis", "retriever", "generator", "parser", "validator",
+        "repair", "generator", "parser", "validator",
+        "finalize"
     ]
-    assert final_state.repair_count == 1
-    assert final_state.validation_report.is_valid is True
+    assert final_state.repair_attempts == 1
+    assert final_state.violation_report.is_valid is True
 
 
 @pytest.mark.asyncio
@@ -183,32 +187,10 @@ async def test_graph_max_repairs_exhausted(
 
     use_case = GenerateItineraryUseCase(**mock_dependencies)
     
-    final_state = None
-    original_run = use_case._graph.run
-    async def wrapped_run(state: CartenaState):
-        nonlocal final_state
-        final_state = state
-        async for event in original_run(state):
-            yield event
-    use_case._graph.run = wrapped_run
+    events = []
+    async for event in use_case.execute(mock_trip_request, workflow_id='test_wf'):
+        events.append(event)
     
-    async for _ in use_case.execute(mock_trip_request):
-        pass
-
-    assert final_state is not None
-    assert final_state.visited_nodes == [
-        "retrieve", 
-        "generate", "validate",  # initial
-        "generate", "validate",  # repair 1
-        "generate", "validate",  # repair 2
-        "save"                   # exhausted fallback
-    ]
-    assert final_state.repair_count == 2
-    
-    # Crucial assertion: the failure was NOT masked as a success.
-    # The report is still invalid, and violations are preserved in the state.
-    assert final_state.validation_report.is_valid is False
-    assert "Stubborn constraint violation" in final_state.validation_report.hard_violations
-    
-    # Ensure it was actually saved despite the fallback
-    mock_dependencies["itinerary_repo"].save.assert_called_once()
+    error_events = [e for e in events if e["type"] == "error"]
+    assert len(error_events) > 0
+    assert "3 repair attempt" in error_events[0]["message"]

@@ -20,7 +20,7 @@ async def main():
     print("==================================================")
     
     req = TripRequest(
-        destination="Paris",
+        destinations=("Paris",),
         duration_days=3,
         budget=BudgetLevel.MEDIUM,
         interests=(Interest.CULTURE,)

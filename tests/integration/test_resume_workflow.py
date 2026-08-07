@@ -25,7 +25,7 @@ async def main():
     print("TEST 1: Normal generation regression test")
     print("==================================================")
     req = TripRequest(
-        destination="London",
+        destinations=("London",),
         duration_days=2,
         budget=BudgetLevel.MEDIUM,
         interests=(Interest.CULTURE,)
@@ -103,7 +103,7 @@ async def main():
     container.generate_itinerary._engine._llm = FaultyLLMClient(original_llm)
     
     interrupt_req = TripRequest(
-        destination="Tokyo",
+        destinations=("Tokyo",),
         duration_days=1,
         budget=BudgetLevel.LOW,
         interests=(Interest.FOOD,)

@@ -23,11 +23,13 @@ def repo(tmp_path) -> SQLiteItineraryRepository:
 def make_itinerary(kb_miss: bool = False) -> Itinerary:
     it = Itinerary(
         trip_request=TripRequest(
-            destination="Tokyo",
+            destinations=("Tokyo",),
             duration_days=1,
             budget=BudgetLevel.MEDIUM,
             interests=(Interest.CULTURE, Interest.FOOD),
             notes="vegan",
+            allocation_mode="USER",
+            allocations={"Tokyo": 1},
         ),
         days=[
             Day(
@@ -59,7 +61,7 @@ class TestRoundTrip:
 
         assert loaded is not None
         assert loaded.id == saved_id
-        assert loaded.destination == "Tokyo"
+        assert loaded.destinations == ("Tokyo",)
         assert loaded.raw_response == "RAW-RESPONSE-MARKER"
 
     async def test_get_missing_returns_none(self, repo):
@@ -122,4 +124,7 @@ class TestMigration:
 
         assert loaded is not None
         assert loaded.kb_miss is True
+        assert loaded.trip_request.allocation_mode == "USER"
+        assert loaded.trip_request.allocations == {"Tokyo": 1}
+        assert loaded.destinations == ("Tokyo",)
 

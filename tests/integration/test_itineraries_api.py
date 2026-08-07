@@ -23,7 +23,7 @@ from backend.infrastructure.persistence.sqlite_itinerary_repo import (
 def make_itinerary() -> Itinerary:
     return Itinerary(
         trip_request=TripRequest(
-            destination="Tokyo",
+            destinations=("Tokyo",),
             duration_days=1,
             budget=BudgetLevel.MEDIUM,
             interests=(Interest.CULTURE,),

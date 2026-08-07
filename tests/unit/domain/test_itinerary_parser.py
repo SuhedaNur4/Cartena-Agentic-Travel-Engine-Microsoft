@@ -10,7 +10,7 @@ from backend.domain.services.itinerary_parser import parse
 @pytest.fixture
 def trip_request() -> TripRequest:
     return TripRequest(
-        destination="Paris",
+        destinations=("Paris",),
         duration_days=3,
         budget=BudgetLevel.MEDIUM,
         interests=(Interest.CULTURE,),

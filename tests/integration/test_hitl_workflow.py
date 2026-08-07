@@ -6,14 +6,14 @@ Tests the pause -> checkpoint -> resume -> complete lifecycle.
 import pytest
 import os
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from typing import AsyncIterator
 
 from backend.domain.models.trip_request import TripRequest, BudgetLevel, Interest
 from backend.domain.models.itinerary import Itinerary, Day, ActivityBlock
 from backend.domain.services.validator import ViolationReport
 from backend.domain.models.resolution import ResolutionOption, ResolutionAction
-from backend.application.use_cases.state_graph.state import CartenaState
+from backend.application.use_cases.state_graph.state import WorkflowState
 from backend.application.use_cases.generate_itinerary import GenerateItineraryUseCase
 from backend.application.use_cases.resume_workflow import ResumeWorkflowUseCase
 from backend.infrastructure.repositories.json_checkpoint_repo import JSONFileCheckpointRepository
@@ -22,7 +22,7 @@ from backend.infrastructure.repositories.json_checkpoint_repo import JSONFileChe
 @pytest.fixture
 def mock_trip_request():
     return TripRequest(
-        destination="Kyoto",
+        destinations=("Kyoto",),
         duration_days=1,
         budget=BudgetLevel.MEDIUM,
         interests=(Interest.CULTURE,),
@@ -36,28 +36,35 @@ def checkpoint_repo(tmp_path):
 
 @pytest.fixture
 def mock_dependencies(checkpoint_repo):
-    llm_client = AsyncMock()
-    llm_client.model_name = "test-model"
-    async def mock_stream(*args, **kwargs):
-        yield "fake response"
-    llm_client.stream = mock_stream
+    class FakeLLMClient:
+        model_name = "test-model"
+        async def stream(self, *args, **kwargs):
+            yield "fake response"
+    
+    llm_client = FakeLLMClient()
     
     embedding_client = AsyncMock()
     embedding_client.embed.return_value = [0.1, 0.2]
     
-    vector_store = AsyncMock()
-    vector_store.retrieve.return_value = []
-    
-    itinerary_repo = AsyncMock()
-    itinerary_repo.save.return_value = "test-id-123"
+    from backend.application.services.knowledge_service import KnowledgeService
+    from backend.application.ports.llm_port import ILLMClient
+    from backend.application.ports.embedding_port import IEmbeddingClient
+    from backend.application.ports.vector_store_port import IVectorStore
+    from backend.application.ports.itinerary_repo_port import IItineraryRepository
+    from backend.application.ports.trace_repo_port import ITraceRepository
+
+    mock_ks = AsyncMock(spec=KnowledgeService)
+    mock_ks.get_context_for_destination.return_value = []
     
     return {
         "llm_client": llm_client,
-        "embedding_client": embedding_client,
-        "vector_store": vector_store,
-        "itinerary_repo": itinerary_repo,
+        "embedding_client": AsyncMock(spec=IEmbeddingClient),
+        "vector_store": AsyncMock(spec=IVectorStore),
+        "itinerary_repo": AsyncMock(spec=IItineraryRepository),
+        "online_adapters": [],
         "checkpoint_repo": checkpoint_repo,
-        "online_adapters": []
+        "trace_repo": AsyncMock(spec=ITraceRepository),
+        "knowledge_service": mock_ks,
     }
 
 
@@ -90,6 +97,7 @@ async def test_hitl_pause_and_checkpoint(
     # Always fail validation (Budget error)
     violation = ViolationReport(
         is_valid=False,
+        severity="CRITICAL",
         hard_violations=["Budget exceeded"],
         resolutions=[
             ResolutionOption(
@@ -108,7 +116,7 @@ async def test_hitl_pause_and_checkpoint(
         events.append(event)
         
     # Find the HITL event
-    hitl_event = next((e for e in events if e.get("type") == "hitl_required"), None)
+    hitl_event = next((e for e in events if e.get("type") == "human_review_required"), None)
     assert hitl_event is not None
     assert hitl_event["workflow_id"] == "wf-1"
     assert len(hitl_event["resolutions"]) == 1
@@ -118,9 +126,9 @@ async def test_hitl_pause_and_checkpoint(
     repo = mock_dependencies["checkpoint_repo"]
     saved_state = await repo.get("wf-1")
     assert saved_state is not None
-    assert saved_state.workflow_status == "WAITING_FOR_HUMAN"
-    assert saved_state.repair_count == 2  # default max_repairs is 2
-    assert saved_state.resolutions[0].id == "increase_budget"
+    assert saved_state.workflow_status == "WAITING_HUMAN"
+    assert saved_state.repair_attempts == 0
+    assert saved_state.violation_report.resolutions[0].id == "increase_budget"
 
 
 # ── Test 2 & 4: Resume Integration & Normal Recovery ─────────────────────────
@@ -155,22 +163,20 @@ async def test_hitl_resume_and_normal_recovery(
     mock_parse.side_effect = mock_parse_func
     
     violation_with_resolution = ViolationReport(
-        is_valid=False, hard_violations=["Budget exceeded"],
+        is_valid=False, hard_violations=["Budget exceeded"], severity="CRITICAL",
         resolutions=[ResolutionOption(id="increase_budget", label="Inc", action=ResolutionAction(type="update_budget", value="high"))]
     )
     
-    # 1. Fail twice for initial run
-    # 2. After resume, fail once (triggering repair)
+    # 1. Fail initially with CRITICAL -> HITL
+    # 2. After resume, fail once with normal ERROR -> Repair Loop
     # 3. Then succeed.
     mock_validate.side_effect = [
-        violation_with_resolution,  # Try 1
-        violation_with_resolution,  # Try 2 -> repair_count = 1
-        violation_with_resolution,  # Try 3 -> repair_count = 2 (HITL triggered)
-        ViolationReport(is_valid=False, hard_violations=["Some other error"]), # Post-resume Try 1 -> repair_count = 1
+        violation_with_resolution,  # Try 1 -> HITL triggered
+        ViolationReport(is_valid=False, hard_violations=["Some other error"], severity="ERROR"), # Post-resume Try 1 -> Repair Loop
         ViolationReport(is_valid=True) # Post-resume Try 2 -> Save
     ]
-
     use_case = GenerateItineraryUseCase(**mock_dependencies)
+    mock_dependencies["itinerary_repo"].save.return_value = "fake-itinerary-id"
     
     # Run initially until HITL
     async for _ in use_case.execute(request=mock_trip_request, workflow_id="wf-2"):
@@ -178,7 +184,7 @@ async def test_hitl_resume_and_normal_recovery(
 
     repo = mock_dependencies["checkpoint_repo"]
     paused_state = await repo.get("wf-2")
-    assert paused_state.workflow_status == "WAITING_FOR_HUMAN"
+    assert paused_state.workflow_status == "WAITING_HUMAN"
     assert paused_state.request.budget.value == "medium"
     
     # Now Resume
@@ -213,11 +219,15 @@ async def test_hitl_invalid_resolution(mock_dependencies, mock_trip_request):
     Must yield an error and not resume the workflow.
     """
     repo = mock_dependencies["checkpoint_repo"]
-    state = CartenaState(request=mock_trip_request)
-    state.workflow_status = "WAITING_FOR_HUMAN"
-    state.resolutions = [
-        ResolutionOption(id="valid_action", label="V", action=ResolutionAction(type="retry", value=""))
-    ]
+    state = WorkflowState(request=mock_trip_request, target_days=[], planning_mode="AI")
+    state.workflow_status = "WAITING_HUMAN"
+    state.resume_from_node = "constraint_analysis"
+    state.violation_report = ViolationReport(
+        is_valid=False, severity="CRITICAL",
+        resolutions=[
+            ResolutionOption(id="valid_action", label="V", action=ResolutionAction(type="retry", value=""))
+        ]
+    )
     await repo.save("wf-3", state)
     
     resume_use_case = ResumeWorkflowUseCase(
@@ -235,4 +245,4 @@ async def test_hitl_invalid_resolution(mock_dependencies, mock_trip_request):
     
     # Checkpoint must remain untouched
     unchanged_state = await repo.get("wf-3")
-    assert unchanged_state.workflow_status == "WAITING_FOR_HUMAN"
+    assert unchanged_state.workflow_status == "WAITING_HUMAN"

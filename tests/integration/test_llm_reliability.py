@@ -32,7 +32,7 @@ def test_small_model_sometimes_violates_json_schema():
     }
     '''
     request = TripRequest(
-        destination="Tokyo",
+        destinations=("Tokyo",),
         duration_days=1,
         budget=BudgetLevel.LOW,
         interests=(Interest.FOOD,),
@@ -72,7 +72,7 @@ def test_model_sometimes_ignores_negative_constraints():
       ]
     }'''
     request = TripRequest(
-        destination="Tokyo",
+        destinations=("Tokyo",),
         duration_days=1,
         budget=BudgetLevel.LOW,
         interests=(Interest.FOOD,),

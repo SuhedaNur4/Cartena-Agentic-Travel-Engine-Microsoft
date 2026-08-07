@@ -9,7 +9,7 @@ from backend.domain.services.prompt_builder import build
 @pytest.fixture
 def basic_request() -> TripRequest:
     return TripRequest(
-        destination="Tokyo",
+        destinations=("Tokyo",),
         duration_days=5,
         budget=BudgetLevel.MEDIUM,
         interests=(Interest.CULTURE, Interest.FOOD),
@@ -53,9 +53,9 @@ def test_online_context_injected(basic_request):
     assert "22°C" in user_prompt
 
 
-def test_system_prompt_requests_json(basic_request):
-    system_prompt, _ = build(basic_request, rag_chunks=[])
-    assert "JSON" in system_prompt
+def test_user_prompt_requests_markdown(basic_request):
+    system_prompt, user_prompt = build(basic_request, rag_chunks=[])
+    assert "Markdown" in user_prompt
     assert "days" in system_prompt
 
 
@@ -74,7 +74,7 @@ class TestOffTopicChunks:
         from backend.domain.services.prompt_builder import build
 
         request = TripRequest(
-            destination="Tokyo",
+            destinations=("Tokyo",),
             duration_days=2,
             budget=BudgetLevel.MEDIUM,
             interests=(Interest.CULTURE,),
@@ -94,7 +94,7 @@ class TestOffTopicChunks:
         from backend.domain.services.prompt_builder import build
 
         request = TripRequest(
-            destination="Tokyo",
+            destinations=("Tokyo",),
             duration_days=2,
             budget=BudgetLevel.MEDIUM,
             interests=(Interest.CULTURE,),
