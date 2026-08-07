@@ -43,3 +43,6 @@ debug_*.py
 fix_*.py
 run_*.py
 ignore_append.py
+*.sqlite
+*.log
+logs/

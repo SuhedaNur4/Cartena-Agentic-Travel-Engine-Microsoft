@@ -10,7 +10,7 @@ from dataclasses import asdict
 from datetime import date
 
 from backend.application.ports.checkpoint_repo_port import ICheckpointRepository
-from backend.application.use_cases.state_graph.state import CartenaState
+from backend.application.use_cases.state_graph.state import WorkflowState
 from backend.domain.models.itinerary import Itinerary, Day, ActivityBlock, MealSuggestion
 from backend.domain.models.trip_request import TripRequest, BudgetLevel, Interest
 from backend.domain.models.resolution import ResolutionOption, ResolutionAction
@@ -24,6 +24,9 @@ class StateEncoder(json.JSONEncoder):
             return obj.value
         if isinstance(obj, date):
             return obj.isoformat()
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+            
         if hasattr(obj, "__dict__"):
             # If it's a dataclass
             import dataclasses
@@ -41,13 +44,13 @@ class JSONFileCheckpointRepository(ICheckpointRepository):
     def _get_path(self, workflow_id: str) -> str:
         return os.path.join(self.directory, f"{workflow_id}.json")
 
-    async def save(self, workflow_id: str, state: CartenaState) -> None:
+    async def save(self, workflow_id: str, state: WorkflowState) -> None:
         """Saves pure data into JSON. Runtime objects are excluded."""
         data = json.dumps(state, cls=StateEncoder, indent=2)
         with open(self._get_path(workflow_id), "w", encoding="utf-8") as f:
             f.write(data)
 
-    async def get(self, workflow_id: str) -> CartenaState | None:
+    async def get(self, workflow_id: str) -> WorkflowState | None:
         path = self._get_path(workflow_id)
         if not os.path.exists(path):
             return None
@@ -56,35 +59,33 @@ class JSONFileCheckpointRepository(ICheckpointRepository):
             
         return self._dict_to_state(data)
 
-    def _dict_to_state(self, data: dict) -> CartenaState:
+    def _dict_to_state(self, data: dict) -> WorkflowState:
         # Reconstruct TripRequest
         tr_data = data["request"]
+        destinations = tr_data.get("destinations", [tr_data.get("destination")])
         tr = TripRequest(
-            destination=tr_data["destination"],
+            destinations=tuple(destinations),
             duration_days=tr_data["duration_days"],
             budget=BudgetLevel(tr_data["budget"]),
             interests=tuple(Interest(i) for i in tr_data["interests"]),
             notes=tr_data["notes"],
-            start_date=date.fromisoformat(tr_data["start_date"]) if tr_data.get("start_date") else None
+            start_date=date.fromisoformat(tr_data["start_date"]) if tr_data.get("start_date") else None,
+            allocation_mode=tr_data.get("allocation_mode", "AI"),
+            allocations=tr_data.get("allocations", {})
         )
         
-        state = CartenaState(request=tr)
+        state = WorkflowState(
+            request=tr,
+            planning_mode=data.get("planning_mode", "AI"),
+            target_days=data.get("target_days", []),
+            user_replan_reason=data.get("user_replan_reason")
+        )
         
         # Primitive fields
-        for key in ["visited_nodes", "workflow_id", "workflow_status", "resume_from_node", 
-                    "user_decision", "planning_mode", "target_days", "user_replan_reason",
-                    "online_context", "rag_chunks", "kb_miss", "system_prompt", "user_prompt",
-                    "raw_response", "repair_count", "max_repairs", "itinerary_id", "error_message"]:
+        for key in ["workflow_id", "workflow_status", "resume_from_node", 
+                    "user_decision", "repair_attempts", "status"]:
             if key in data:
                 setattr(state, key, data[key])
-                
-        # Resolutions
-        if "resolutions" in data and data["resolutions"]:
-            resolutions = []
-            for res in data["resolutions"]:
-                action = ResolutionAction(**res["action"])
-                resolutions.append(ResolutionOption(id=res["id"], label=res["label"], action=action))
-            state.resolutions = resolutions
 
         # Itineraries
         def dict_to_itinerary(it_data: dict | None) -> Itinerary | None:
@@ -115,11 +116,12 @@ class JSONFileCheckpointRepository(ICheckpointRepository):
         state.parsed_itinerary = dict_to_itinerary(data.get("parsed_itinerary"))
         state.merged_itinerary = dict_to_itinerary(data.get("merged_itinerary"))
         
-        # ValidationReport
-        if data.get("validation_report"):
-            vr = data["validation_report"]
+        # ViolationReport
+        if data.get("violation_report"):
+            vr = data["violation_report"]
             report = ViolationReport(
                 is_valid=vr["is_valid"],
+                severity=vr.get("severity", "ERROR"),
                 hard_violations=vr.get("hard_violations", []),
                 soft_warnings=vr.get("soft_warnings", []),
                 constraint_score=vr.get("constraint_score", 1.0),
@@ -131,6 +133,6 @@ class JSONFileCheckpointRepository(ICheckpointRepository):
                     action = ResolutionAction(**res["action"])
                     res_list.append(ResolutionOption(id=res["id"], label=res["label"], action=action))
                 report.resolutions = res_list
-            state.validation_report = report
+            state.violation_report = report
 
         return state

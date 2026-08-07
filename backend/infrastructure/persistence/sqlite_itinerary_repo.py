@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS itineraries (
     day_count       INTEGER NOT NULL,
     days_json       TEXT NOT NULL,       -- Full day data as JSON blob
     raw_response    TEXT NOT NULL DEFAULT '',
-    kb_miss         INTEGER NOT NULL DEFAULT 0  -- 1 if KB had no city-specific chunks
+    kb_miss         INTEGER NOT NULL DEFAULT 0,  -- 1 if KB had no city-specific chunks
+    destinations_json TEXT NOT NULL DEFAULT '[]',
+    allocations_json  TEXT NOT NULL DEFAULT '{}',
+    allocation_mode TEXT NOT NULL DEFAULT 'AI'
 )
 """
 
@@ -57,6 +60,18 @@ _MIGRATIONS: list[tuple[str, str]] = [
     (
         "is_favorite",
         "ALTER TABLE itineraries ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "destinations_json",
+        "ALTER TABLE itineraries ADD COLUMN destinations_json TEXT NOT NULL DEFAULT '[]'",
+    ),
+    (
+        "allocations_json",
+        "ALTER TABLE itineraries ADD COLUMN allocations_json TEXT NOT NULL DEFAULT '{}'",
+    ),
+    (
+        "allocation_mode",
+        "ALTER TABLE itineraries ADD COLUMN allocation_mode TEXT NOT NULL DEFAULT 'AI'",
     ),
 ]
 
@@ -132,8 +147,9 @@ class SQLiteItineraryRepository(IItineraryRepository):
                 INSERT OR REPLACE INTO itineraries
                     (id, destination, duration_days, budget, interests, notes,
                      model_used, created_at, day_count, days_json, raw_response,
-                     kb_miss)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     kb_miss, is_favorite, destinations_json, allocations_json,
+                     allocation_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     itinerary.id,
@@ -148,6 +164,10 @@ class SQLiteItineraryRepository(IItineraryRepository):
                     json.dumps(days_data, ensure_ascii=False),
                     itinerary.raw_response or "",
                     int(itinerary.kb_miss),
+                    int(itinerary.is_favorite),
+                    json.dumps(getattr(itinerary, "destinations", list(itinerary.trip_request.destinations))),
+                    json.dumps(getattr(itinerary.trip_request, "allocations", {})),
+                    getattr(itinerary.trip_request, "allocation_mode", "AI"),
                 ),
             )
             await db.commit()
@@ -175,7 +195,7 @@ class SQLiteItineraryRepository(IItineraryRepository):
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 """
-                SELECT id, destination, duration_days, budget, model_used, created_at, day_count
+                SELECT id, destination, duration_days, budget, model_used, created_at, day_count, is_favorite
                 FROM itineraries
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -315,13 +335,21 @@ class SQLiteItineraryRepository(IItineraryRepository):
 
     @staticmethod
     def _row_to_itinerary(row: aiosqlite.Row) -> Itinerary:
+        keys = row.keys()
         interests = tuple(Interest(i) for i in json.loads(row["interests"]))
+        
+        destinations = json.loads(row["destinations_json"]) if "destinations_json" in keys else [row["destination"]]
+        allocations = json.loads(row["allocations_json"]) if "allocations_json" in keys else {}
+        allocation_mode = row["allocation_mode"] if "allocation_mode" in keys else "AI"
+
         trip_request = TripRequest(
-            destination=row["destination"],
+            destinations=tuple(destinations),
             duration_days=row["duration_days"],
             budget=BudgetLevel(row["budget"]),
             interests=interests,
             notes=row["notes"],
+            allocations=allocations,
+            allocation_mode=allocation_mode,
         )
 
         days_data: list[dict] = json.loads(row["days_json"])
