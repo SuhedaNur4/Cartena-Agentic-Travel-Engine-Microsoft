@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
 
+from backend.domain.value_objects.flight_context import FlightContext
+
 
 class BudgetLevel(str, Enum):
     LOW = "low"
@@ -44,6 +46,7 @@ class TripRequest:
     start_date: date | None = None   # Optional trip start date; used for weather forecast
     allocation_mode: str = "AI"      # "USER" or "AI"
     allocations: dict[str, int] = field(default_factory=dict)
+    flight_context: FlightContext | None = None
 
     def __post_init__(self) -> None:
         if not self.destinations:
