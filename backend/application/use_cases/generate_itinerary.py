@@ -63,6 +63,7 @@ class GenerateItineraryUseCase:
         knowledge_service: KnowledgeService | None = None,
     ) -> None:
         self._allocation_engine = allocation_engine
+        self._knowledge_service = knowledge_service
         self._engine = StateGraphEngine(
             llm_client=llm_client,
             knowledge_service=knowledge_service,
@@ -98,6 +99,28 @@ class GenerateItineraryUseCase:
         """
         try:
             if request and self._allocation_engine and not workflow_id:
+                yield {"type": "stage", "name": "Resolving destinations"}
+                if self._knowledge_service:
+                    normalized_dests = []
+                    for dest_str in request.destinations:
+                        resolved_dests = await self._knowledge_service.parse_and_resolve_destinations(dest_str)
+                        for r_dest in resolved_dests:
+                            normalized_dests.append(r_dest.input_name)
+                            
+                    import dataclasses
+                    request = dataclasses.replace(request, destinations=tuple(normalized_dests))
+                
+                yield {"type": "stage", "name": "Analyzing route sequence"}
+                from backend.application.use_cases.allocation.route_analyzer import RouteAnalyzer
+                analyzer = RouteAnalyzer()
+                route_seq = analyzer.analyze(request)
+                
+                # Combine start, stops, and end in order (deduplicate if needed, though they shouldn't overlap if coded right)
+                # Wait, route_seq.stops actually contains ALL intermediate stops AND start and end depending on how we wrote it.
+                # Actually, in RouteAnalyzer we appended start_city, intermediate, then end_city to stops.
+                ordered_dests = tuple(route_seq.stops)
+                request = dataclasses.replace(request, destinations=ordered_dests)
+                
                 yield {"type": "stage", "name": "Allocating trip days"}
                 request = await self._allocation_engine.allocate(request)
 
